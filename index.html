@@ -405,6 +405,29 @@ function fbLoadAll() {
     hideFbLoad();
     fbReady = true;
 
+    // Restore session jika sudah login sebelumnya
+    const savedSession = sessionStorage.getItem('wb_session');
+    if (savedSession) {
+      try {
+        const sess = JSON.parse(savedSession);
+        const user = USERS.find(x => x.id === sess.id && x.username === sess.username);
+        if (user) {
+          CU = user;
+          currentMonth = todayYM();
+          buildMonthSelector();
+          document.getElementById('tb-role').textContent = roleLabel[CU.role] || CU.role;
+          document.getElementById('LS').style.display = 'none';
+          const app = document.getElementById('APP');
+          app.style.display = 'flex';
+          app.style.flexDirection = 'column';
+          app.style.flex = '1';
+          app.style.minHeight = '100%';
+          navStack = [];
+          pushNav({ title: 'Wawan Bunga', sub: 'Selamat datang, ' + CU.name, renderFn: renderHome, showBack: false });
+        }
+      } catch(e) { sessionStorage.removeItem('wb_session'); }
+    }
+
     // Flush antrian offline jika ada
     if (isOnline) flushOfflineQueue();
 
@@ -698,6 +721,8 @@ function doLogin() {
   const found = USERS.find(x => x.username === u && (x.pass === p || x.password === p));
   if (!found) { document.getElementById('lerr').style.display = 'block'; return; }
   CU = found;
+  // Simpan session agar tidak logout saat refresh
+  sessionStorage.setItem('wb_session', JSON.stringify({ id: found.id, username: found.username }));
   currentMonth = todayYM();
   buildMonthSelector();
   document.getElementById('tb-role').textContent = roleLabel[CU.role] || CU.role;
@@ -728,6 +753,7 @@ function buildMonthSelector() {
 }
 
 function doLogout() {
+  sessionStorage.removeItem('wb_session');
   document.getElementById('APP').style.display = 'none';
   document.getElementById('LS').style.display = 'flex';
   document.getElementById('lerr').style.display = 'none';
