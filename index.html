@@ -70,7 +70,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;color:var(--t);
 .tb-title{font-family:'Playfair Display',serif;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
 .tb-sub{font-size:10px;opacity:.75;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px}
 .btn-out{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);color:#fff;
-  padding:5px 12px;border-radius:8px;cursor:pointer;font-size:12px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:600}
+  padding:3px 7px;border-radius:6px;cursor:pointer;font-size:10px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:600}
 
 .mc{flex:1;padding:12px;max-width:480px;margin:0 auto;width:100%;padding-bottom:32px}
 
@@ -175,8 +175,8 @@ tr:nth-child(even) td.td-sticky{background:#fdf8f5}
 .conn-dot.online{background:#22c55e;box-shadow:0 0 6px #22c55e}
 .conn-dot.offline{background:#f87171;box-shadow:0 0 6px #f87171}
 .conn-dot.pending{background:#fbbf24;box-shadow:0 0 6px #fbbf24}
-#conn-status{display:flex;align-items:center;font-size:10px;color:#fff;font-weight:600;white-space:nowrap;
-  background:rgba(0,0,0,.2);border-radius:8px;padding:3px 8px;gap:3px}
+#conn-status{display:flex;align-items:center;font-size:9px;color:#fff;font-weight:600;white-space:nowrap;
+  background:rgba(0,0,0,.2);border-radius:6px;padding:2px 6px;gap:2px}
 /* ── LOADING SCREEN ── */
 #FB-LOAD{position:fixed;inset:0;background:linear-gradient(155deg,#1a0800,#5c1a00,#C2500A);
   display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:8000;gap:16px}
@@ -260,7 +260,7 @@ tr:nth-child(even) td.td-sticky{background:#fdf8f5}
     <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
       <select id="month-sel" onchange="currentMonth=this.value;refreshPage()" style="display:none;position:absolute"></select>
       <div id="conn-status"><span class="conn-dot pending" id="conn-dot"></span><span id="conn-txt">...</span></div>
-      <span id="tb-role" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);color:#fff;padding:4px 10px;border-radius:8px;font-size:11px;font-weight:700;white-space:nowrap"></span>
+      <span id="tb-role" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.3);color:#fff;padding:2px 7px;border-radius:6px;font-size:10px;font-weight:700;white-space:nowrap"></span>
       <button class="btn-out" onclick="doLogout()" style="font-size:11px;padding:5px 10px;white-space:nowrap">Keluar</button>
     </div>
   </div>
