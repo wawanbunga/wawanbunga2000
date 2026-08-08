@@ -23,6 +23,10 @@
   --r:16px;--rs:10px;
 }
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+/* Hilangkan tombol panah atas/bawah (spinner) di semua input angka — supaya tidak menutupi angka */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none!important;margin:0!important;display:none!important}
+input[type=number]{-moz-appearance:textfield!important;appearance:textfield!important}
 html,body{height:100%;width:100%;overflow-x:hidden;background:var(--bg)}
 body{font-family:'Plus Jakarta Sans',sans-serif;color:var(--t);
   display:flex;flex-direction:column;min-height:100vh;min-height:100dvh;}
@@ -367,6 +371,14 @@ tr:nth-child(even) .puv-cell-sub{background:#fdf8f5}
   </div>
 </div>
 
+<div class="mo" id="RM" onclick="jtCloseRowMenu(event)">
+  <div class="ms" style="max-width:360px" onclick="event.stopPropagation()">
+    <div class="mh"></div>
+    <div class="mt" id="rm-title">Aksi Baris</div>
+    <div id="rm-body"></div>
+  </div>
+</div>
+
 <div class="toast" id="TOAST"></div>
 
 <script>
@@ -486,6 +498,12 @@ function fbLoadAll() {
     // Jumlah Tanaman
     if (d.jtData)  jtData  = d.jtData;
     if (d.jtSubs)  jtSubs  = d.jtSubs;
+    jtNormalizeEmptyBlocks(); // pastikan semua blok (bukan cuma Blok A) tampil 1 baris kosong siap-isi
+
+    // Jumlah Tanaman — Kalibanger (grid spreadsheet tersinkron)
+    if (d.kalGrid)     kalGrid     = d.kalGrid;
+    if (d.kalSections) kalSections = d.kalSections;
+    if (d.kalMaxRow)   kalMaxRow   = d.kalMaxRow;
 
     // Plastik UV (digabung per-lokasi, bukan ditimpa total, supaya lokasi baru
     // seperti Sawah Gondang tidak hilang kalau data lama di Firebase belum punya lokasi itu)
@@ -547,7 +565,8 @@ function fbSetupListeners() {
     'users','karyawan','absenData','lemburData','kasData',
     'panenData','obatData','dripData','bunga','penjualanData',
     'matunData','jtData','jtSubs','puvData','puvCells','lemburRate',
-    'karyawanSG','absenDataSG','lemburDataSG','lemburRateSG','bedengSetup'
+    'karyawanSG','absenDataSG','lemburDataSG','lemburRateSG','bedengSetup',
+    'kalGrid','kalSections','kalMaxRow'
   ];
   paths.forEach(path => {
     db.ref('/' + path).on('value', snap => {
@@ -576,6 +595,9 @@ function applyRemoteData(path, val) {
     case 'matunData':       matunData     = val; break;
     case 'jtData':          jtData        = val; break;
     case 'jtSubs':          jtSubs        = val; break;
+    case 'kalGrid':         kalGrid       = val; break;
+    case 'kalSections':     kalSections   = val; break;
+    case 'kalMaxRow':       kalMaxRow     = val; break;
     case 'puvData':         puvData  = mergePUVData(val); break;
     case 'puvCells':        puvCells = mergePUVCells(val); break;
     case 'lemburRate':      lemburRate    = val; break;
@@ -652,7 +674,8 @@ function loadFromLocalStorage() {
     'users','karyawan','absenData','lemburData','kasData',
     'panenData','obatData','dripData','bunga','penjualanData',
     'matunData','jtData','jtSubs','puvData','puvCells',
-    'karyawanSG','absenDataSG','lemburDataSG','lemburRateSG','bedengSetup'
+    'karyawanSG','absenDataSG','lemburDataSG','lemburRateSG','bedengSetup',
+    'kalGrid','kalSections','kalMaxRow'
   ];
   keys.forEach(k => {
     try {
@@ -771,7 +794,9 @@ function applyNav(entry) {
   document.getElementById('tb-sub').textContent = entry.sub || '';
   document.getElementById('btn-back').style.display = entry.showBack ? 'flex' : 'none';
   document.getElementById('tb-logo').style.display = entry.showBack ? 'none' : 'flex';
+  CURRENT_LOC = null;
   entry.renderFn();
+  applyReadOnlyGuard();
 }
 
 function goBack() {
@@ -826,6 +851,53 @@ const roleName = {
   petugas_sawahgondang:'Petugas Sawah Gondang',
   pengawas:'Pengawas'
 };
+
+// ── PERMISSION SYSTEM (role-based access) ────────────────────
+// Lokasi: 1=Kalibanger, 2=Tegalroto, 3=Ngadikerso, 4=Sawah Gondang
+const ROLE_LOC = { petugas_kalibanger:1, petugas_tegalroto:2, petugas_ngadikerso:3, petugas_sawahgondang:4 };
+let CURRENT_LOC = null; // lokasi konteks halaman yang sedang aktif (diset oleh render fn lokasi), direset applyNav()
+
+function myLoc(){ return CU ? (ROLE_LOC[CU.role]||0) : 0; }
+
+// Bisa edit data lokasi t (Panen/Drip/Obat/Matun/Jumlah Tanaman/Plastik UV/Absen-Kas Sawah Gondang)?
+function canEditLoc(t){
+  if(!CU) return false;
+  if(CU.role==='admin') return true;
+  if(CU.role==='bendahara') return false;   // hanya lihat di semua lokasi
+  if(CU.role==='pengawas') return false;    // hanya lihat di semua lokasi
+  return myLoc()===t;                        // petugas: hanya lokasinya sendiri
+}
+
+// Bisa akses menu Absen / Kas / Penjualan (level rumah utama, bukan Sawah Gondang)?
+function canAccessAbsenKasPenjualan(){
+  return CU && (CU.role==='admin' || CU.role==='bendahara');
+}
+
+// Bisa lihat menu Panen/Drip/Obat/Matun/Lain-lain (Jumlah Tanaman & Plastik UV) di Home?
+function canSeeLokasiMenus(){
+  if(!CU) return false;
+  return CU.role==='admin' || CU.role==='bendahara' || CU.role==='pengawas' ||
+         CU.role==='petugas_kalibanger' || CU.role==='petugas_tegalroto' || CU.role==='petugas_ngadikerso';
+}
+
+// Bisa kelola Jenis Bunga (master data)?
+function canManageJenisBunga(){ return CU && CU.role==='admin'; }
+
+// Kunci semua tombol simpan/edit/hapus & input di area konten (#MC) saat CURRENT_LOC read-only
+function applyReadOnlyGuard(){
+  const mc = document.getElementById('MC');
+  if(!mc) return;
+  if(CURRENT_LOC==null || canEditLoc(CURRENT_LOC)) return;
+  mc.querySelectorAll('.btn-save,.bsm,input,select,textarea').forEach(el=>{
+    el.disabled = true;
+    el.style.opacity = '0.45';
+    el.style.pointerEvents = 'none';
+  });
+  const banner = document.createElement('div');
+  banner.style.cssText = 'background:#fef3c7;border:1px solid #f59e0b;color:#92400e;padding:9px 12px;border-radius:10px;font-size:12px;font-weight:700;margin-bottom:12px;text-align:center';
+  banner.textContent = '🔒 Mode lihat saja — Anda tidak punya akses edit di halaman ini';
+  mc.prepend(banner);
+}
 
 function togglePassVis() {
   const inp = document.getElementById('l-pass');
@@ -921,18 +993,22 @@ function renderHome() {
     </div>
     <div class="sec">Menu Utama</div>
     <div class="menu-grid">
+      ${canAccessAbsenKasPenjualan()?`
       <div class="menu-card or" onclick="navAbsen()">
         <div class="mc-icon-wrap" style="background:var(--orp)"><i class="ti ti-calendar-check" style="font-size:22px;color:var(--or)" aria-hidden="true"></i></div>
         <div class="mc-label">Absen</div><div class="mc-sub">Kehadiran & gaji</div>
-      </div>
+      </div>`:''}
+      ${canSeeLokasiMenus()?`
       <div class="menu-card green" onclick="navPanen()">
         <div class="mc-icon-wrap" style="background:#edf7f1"><i class="ti ti-plant-2" style="font-size:22px;color:#1a6b3c" aria-hidden="true"></i></div>
         <div class="mc-label">Panen</div><div class="mc-sub">Input hasil panen</div>
-      </div>
+      </div>`:''}
+      ${canAccessAbsenKasPenjualan()?`
       <div class="menu-card gold" onclick="navKas()">
         <div class="mc-icon-wrap" style="background:#fefce8"><i class="ti ti-wallet" style="font-size:22px;color:#b8820f" aria-hidden="true"></i></div>
         <div class="mc-label">Kas</div><div class="mc-sub">Buku kas rumah</div>
-      </div>
+      </div>`:''}
+      ${canSeeLokasiMenus()?`
       <div class="menu-card blue" onclick="navDrip()">
         <div class="mc-icon-wrap" style="background:#eff6ff"><i class="ti ti-droplet" style="font-size:22px;color:#1D4ED8" aria-hidden="true"></i></div>
         <div class="mc-label">Drip</div><div class="mc-sub">Pupuk & saringan</div>
@@ -944,15 +1020,17 @@ function renderHome() {
       <div class="menu-card purple" onclick="navMatun()">
         <div class="mc-icon-wrap" style="background:#f5f3ff"><i class="ti ti-scissors" style="font-size:22px;color:#7C3AED" aria-hidden="true"></i></div>
         <div class="mc-label">Matun</div><div class="mc-sub">Penyiangan</div>
-      </div>
+      </div>`:''}
+      ${canAccessAbsenKasPenjualan()?`
       <div class="menu-card red" onclick="navPenjualan()">
         <div class="mc-icon-wrap" style="background:#fef2f2"><i class="ti ti-receipt" style="font-size:22px;color:#c0392b" aria-hidden="true"></i></div>
         <div class="mc-label">Penjualan</div><div class="mc-sub">Laporan penjualan</div>
-      </div>
+      </div>`:''}
+      ${canSeeLokasiMenus()?`
       <div class="menu-card gold" onclick="navLainlain()">
         <div class="mc-icon-wrap" style="background:#fefce8"><i class="ti ti-dots" style="font-size:22px;color:#b8820f" aria-hidden="true"></i></div>
         <div class="mc-label">Lain-lain</div><div class="mc-sub">Jumlah tanaman & lainnya</div>
-      </div>
+      </div>`:''}
       <div class="menu-card green" onclick="navSawahGondang()" style="grid-column:1/-1">
         <div class="mc-icon-wrap" style="background:#edf7f1"><i class="ti ti-map-pin" style="font-size:22px;color:#1a6b3c" aria-hidden="true"></i></div>
         <div class="mc-label">Sawah Gondang</div><div class="mc-sub">Absen, Panen, Kas, Obat, Drip, Matun, Plastik & Jumlah Tanaman</div>
@@ -1096,10 +1174,11 @@ function renderPanenMenu() {
         <div class="mc-icon-wrap" style="background:var(--orp)"><i class="ti ti-chart-bar" style="font-size:22px;color:var(--or)" aria-hidden="true"></i></div>
         <div class="mc-label">Rekap</div><div class="mc-sub">Semua tempat</div>
       </div>
+      ${canManageJenisBunga()?`
       <div class="menu-card purple" onclick="pushNav({title:'Jenis Bunga',sub:'Kelola master bunga',renderFn:renderJenisBunga,showBack:true})" style="grid-column:1/-1">
         <div class="mc-icon-wrap" style="background:#f5f3ff"><i class="ti ti-flower" style="font-size:22px;color:#7C3AED" aria-hidden="true"></i></div>
         <div class="mc-label">Jenis Bunga</div><div class="mc-sub">Tambah, edit & hapus jenis bunga</div>
-      </div>
+      </div>`:''}
     </div>`;
 }
 
@@ -1827,6 +1906,7 @@ function renderAbsenMenuSG() {
 }
 
 function renderAbsensiSG() {
+  CURRENT_LOC = 4;
   clampToAbsenMonth();
   const days = getDays(currentMonth);
   const [y,m] = currentMonth.split('-').map(Number);
@@ -1925,6 +2005,7 @@ function openAbsenBatchSG(ki=-1){
 
 // ── LEMBUR ────────────────────────────────────────────────
 function renderLemburSG(){
+  CURRENT_LOC = 4;
   clampToAbsenMonth();
   const days=getDays(currentMonth);const[y,m]=currentMonth.split('-').map(Number);
   let html=`<div style="display:flex;gap:6px;margin-bottom:8px">
@@ -1992,6 +2073,7 @@ function openLemburBatchSG(ki=-1){
 
 // ── REKAP (Sawah Gondang) — pakai kalender Jawa & state global yang sama ──
 function renderRekapSG(){
+  CURRENT_LOC = 4;
   if(!rekapJawaTahun) initRekapJawa();
   const tahunAJ=rekapJawaTahun, bulanIdx=rekapJawaBulan;
   const namaBulan=JAWA_BULAN[bulanIdx];
@@ -2112,6 +2194,7 @@ function printRekapJawaSG(){
 
 // ── GAJI ──────────────────────────────────────────────────
 function renderGajiSG(){
+  CURRENT_LOC = 4;
   clampToAbsenMonth();
   const days=getDays(currentMonth);const wks=getWeeks(days);const[y,m]=currentMonth.split('-').map(Number);
   // month selector prepend
@@ -2205,6 +2288,7 @@ function openLemburRateEditSG(){
 }
 
 function renderKaryawanSG(){
+  CURRENT_LOC = 4;
   let html=`<div style="display:flex;justify-content:flex-end;margin-bottom:12px">
     <button class="btn-save" style="padding:9px 16px;font-size:13px;border:none;cursor:pointer" onclick="openAddKrSG()"><i class="ti ti-plus" aria-hidden="true"></i> Tambah</button>
   </div><div class="cd">`;
@@ -2246,6 +2330,7 @@ function delKrSG(i){if(!confirm('Hapus '+karyawanSG[i].nama+'?'))return;karyawan
 
 // ── PANEN ─────────────────────────────────────────────────
 function renderPanen(t){
+  CURRENT_LOC = t;
   clampToAbsenMonth();
   const days=getDays(currentMonth);const[y,m]=currentMonth.split('-').map(Number);
   if(!panenData[t])panenData[t]={};
@@ -2256,7 +2341,7 @@ function renderPanen(t){
       <select onchange="currentMonth=this.value;renderPanen(${t})" class="sel-month" style="flex:1">
         ${buildMonthOptsAbsen(currentMonth)}
       </select>
-      ${t===4?`<button class="btn-save" style="padding:0 12px;font-size:12px;border:none;cursor:pointer;white-space:nowrap;background:#7C3AED" onclick="pushNav({title:'Jenis Bunga',sub:'Kelola master bunga',renderFn:renderJenisBunga,showBack:true})"><i class="ti ti-flower" aria-hidden="true"></i> Jenis Bunga</button>`:''}
+      ${t===4&&canManageJenisBunga()?`<button class="btn-save" style="padding:0 12px;font-size:12px;border:none;cursor:pointer;white-space:nowrap;background:#7C3AED" onclick="pushNav({title:'Jenis Bunga',sub:'Kelola master bunga',renderFn:renderJenisBunga,showBack:true})"><i class="ti ti-flower" aria-hidden="true"></i> Jenis Bunga</button>`:''}
     </div>
   </div>
   <div class="tbl-wrap"><table><thead><tr><th class="td-sticky">Tgl</th>${bunga.map(b=>`<th>${b.split(' ')[0]}</th>`).join('')}<th>Total</th><th>Rusak</th></tr></thead><tbody>`;
@@ -2295,12 +2380,14 @@ function refreshPanenFields(t){
   const er=document.getElementById('pn-rusak');if(er)er.value=panenData[t][`P-${currentMonth}-${t}-${d}-rusak`]||'';
 }
 function hapusPanen(t,bi){
+  if(!canEditLoc(t)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
   const d=moCtx.d;
   delete panenData[t][`P-${currentMonth}-${t}-${d}-${bi}`];
   const el=document.getElementById('pn-b-'+bi);if(el)el.value='';
   toast('🗑️ Data dihapus');
 }
 function hapusPanenRusak(t){
+  if(!canEditLoc(t)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
   const d=moCtx.d;
   delete panenData[t][`P-${currentMonth}-${t}-${d}-rusak`];
   const er=document.getElementById('pn-rusak');if(er)er.value='';
@@ -2382,6 +2469,7 @@ function renderPanenRekap(){
 
 // ── KAS ───────────────────────────────────────────────────
 function renderKas(tp){
+  CURRENT_LOC = (typeof tp==='string' && tp.includes('gondang')) ? 4 : null;
   clampToAbsenMonth();
   const[y,m]=currentMonth.split('-').map(Number);
   // filter transaksi bulan ini
@@ -2457,6 +2545,7 @@ const DOSIS_OPTS=['0.5','1','1.25','1.5','2'];
 function dosisSel(id,val=''){return `<select class="fi2" id="${id}" style="width:72px;flex-shrink:0">${DOSIS_OPTS.map(d=>`<option value="${d}"${d==val?'selected':''}>${d}</option>`).join('')}</select>`;}
 
 function renderObat(t){
+  CURRENT_LOC = t;
   clampToAbsenMonth();
   const rows=obatData[t]||[];
   const[y,m]=currentMonth.split('-').map(Number);
@@ -2539,6 +2628,7 @@ const PUPUK_OPTS=['1','2','3','4','5'];
 function pupukSel(id,val=''){return `<select class="fi2" id="${id}" style="width:60px;flex-shrink:0"><option value=""${val===''?'selected':''}>—</option>${PUPUK_OPTS.map(d=>`<option value="${d}"${d==val?'selected':''}>${d}</option>`).join('')}</select>`;}
 
 function renderDrip(t){
+  CURRENT_LOC = t;
   clampToAbsenMonth();
   const rows=dripData[t]||[];
   const[y,m]=currentMonth.split('-').map(Number);
@@ -2844,12 +2934,14 @@ function renderBedengSetup(locs) {
 }
 function renderBedengSetupSG() { renderBedengSetup([4]); }
 function tambahPekerjaBedeng(t){
+  if(!canEditLoc(t)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
   bedengSetup[t].pekerja.push({nama:'',luas:0});
   renderBedengSetup(t===4?[4]:[1,2,3]);
   saveBedeng();
   toast('✅ Pekerja ditambahkan');
 }
 function hapusPekerjaBedeng(t){
+  if(!canEditLoc(t)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
   const s = bedengSetup[t];
   if(s.pekerja.length<=1){toast('⚠️ Minimal 1 pekerja');return;}
   const lastIdx = s.pekerja.length-1;
@@ -2863,6 +2955,7 @@ function hapusPekerjaBedeng(t){
 
 // ── MATUN RENDER ──────────────────────────────────────────
 function renderMatun(t) {
+  CURRENT_LOC = t;
   clampToAbsenMonth();
   const days = getDays(currentMonth);
   const [y,m] = currentMonth.split('-').map(Number);
@@ -2913,7 +3006,7 @@ function renderMatun(t) {
     <select onchange="currentMonth=this.value;renderMatun(${t})" class="sel-month" style="flex:1">
       ${buildMonthOptsAbsen(currentMonth)}
     </select>
-    ${t===4?`<button class="btn-save" style="padding:0 12px;font-size:12px;border:none;cursor:pointer;white-space:nowrap" onclick="pushNav({title:'Bedeng Setup — Sawah Gondang',sub:'Konfigurasi bedeng',renderFn:renderBedengSetupSG,showBack:true})"><i class="ti ti-settings" aria-hidden="true"></i> Bedeng</button>`:''}
+    ${t===4&&canEditLoc(4)?`<button class="btn-save" style="padding:0 12px;font-size:12px;border:none;cursor:pointer;white-space:nowrap" onclick="pushNav({title:'Bedeng Setup — Sawah Gondang',sub:'Konfigurasi bedeng',renderFn:renderBedengSetupSG,showBack:true})"><i class="ti ti-settings" aria-hidden="true"></i> Bedeng</button>`:''}
   </div>
   <div id="matun-sum-${t}" style="background:var(--orp);border-radius:10px;padding:8px 12px;margin-bottom:8px;font-size:11px;display:flex;gap:14px;flex-wrap:wrap">
     <span>Kapasitas: <strong>${kap}</strong></span>
@@ -3091,6 +3184,7 @@ function hideMO(){
 function closeMO(e){if(e.target===document.getElementById('MO'))hideMO();}
 
 function saveMO(){
+  if(CURRENT_LOC!=null && !canEditLoc(CURRENT_LOC)){ hideMO(); toast('🔒 Anda hanya punya akses lihat di sini'); return; }
   const mc=moCtx;
   if(mc.type==='absen'){
     const j=document.getElementById('mo-jenis').value;
@@ -3842,7 +3936,7 @@ function printPenjualan() {
 // Tegalroto  (2): Blok A, B     — sama kolom
 // Ngadikerso (3): Blok A1,A2,A3,B — kolom: BDG,WARNA,J.TANAM,P.BEDENG (tanpa KACANG)
 
-const JT_WARNA_OPTS = ['-','MERAH','SALEM','PINK','PUTIH','POP','ORANGE','KUNING','BONGKAR','KACANG','KOSONG','MERAH BR','SALEM BR','PINK BR','PUTIH BR','ORANGE BR','KUNING BR'];
+const JT_WARNA_OPTS = ['-','MERAH','SALEM','PINK','PUTIH','POP','ORANGE','KUNING','BONGKAR','KACANG','KOSONG','KOLAM','MERAH BR','SALEM BR','PINK BR','PUTIH BR','ORANGE BR','KUNING BR'];
 
 // Struktur data: jtData[lokasi][blok] = [ {bdg, warna, jTanam, kacang, pBedeng}, ... ]
 // Baris orange (subtotal) disimpan terpisah: jtSub[lokasi][blok][sectionIdx]
@@ -3851,9 +3945,9 @@ const JT_WARNA_OPTS = ['-','MERAH','SALEM','PINK','PUTIH','POP','ORANGE','KUNING
 // Config blok per lokasi
 const JT_CONF = {
   1: { nama:'Kalibanger', blok:['A','B','C'], hasKacang:true },
-  2: { nama:'Tegalroto',  blok:['A','B'],     hasKacang:true },
+  2: { nama:'Tegalroto',  blok:['A','B'],     hasKacang:false },
   3: { nama:'Ngadikerso', blok:['A1','A2','A3','B'], hasKacang:false },
-  4: { nama:'Sawah Gondang', blok:['A','B','C','D1','D2','D3'], hasKacang:true },
+  4: { nama:'Sawah Gondang', blok:['A','B','C','D1','D2','D3'], hasKacang:false },
 };
 
 // Data storage: jtData[lok][blok] = array of rows
@@ -3877,8 +3971,245 @@ let jtSubs = {
   4: { A:[], B:[], C:[], D1:[], D2:[], D3:[] },
 };
 
-let jtNextId = 1;
+// ── DATA REAL: Ngadikerso (3) & Tegalroto (2), diinput dari foto spreadsheet ──
+// Sawah Gondang (4) sengaja dibiarkan kosong — baris & subtotal ditambah manual oleh user.
+jtData[3] = {
+  A1: [
+    {id:1,bdg:1,warna:'KUNING',jTanam:190,kacang:'',pBedeng:12},
+    {id:2,bdg:2,warna:'KUNING',jTanam:152,kacang:'',pBedeng:12},
+    {id:3,bdg:3,warna:'KUNING',jTanam:152,kacang:'',pBedeng:12},
+    {id:4,bdg:4,warna:'PINK',jTanam:152,kacang:'',pBedeng:12},
+    {id:5,bdg:5,warna:'PINK',jTanam:216,kacang:'',pBedeng:16},
+    {id:6,bdg:6,warna:'PINK',jTanam:220,kacang:'',pBedeng:17},
+    {id:7,bdg:7,warna:'PINK',jTanam:228,kacang:'',pBedeng:17},
+    {id:8,bdg:8,warna:'PINK',jTanam:232,kacang:'',pBedeng:18},
+    {id:9,bdg:9,warna:'KACANG',jTanam:236,kacang:'',pBedeng:18},
+    {id:10,bdg:10,warna:'PINK',jTanam:240,kacang:'',pBedeng:18},
+    {id:11,bdg:11,warna:'PINK',jTanam:244,kacang:'',pBedeng:18},
+    {id:12,bdg:12,warna:'PINK',jTanam:248,kacang:'',pBedeng:19},
+    {id:13,bdg:13,warna:'PINK',jTanam:248,kacang:'',pBedeng:18}
+  ],
+  A2: [
+    {id:14,bdg:1,warna:'KUNING',jTanam:165,kacang:'',pBedeng:10},
+    {id:15,bdg:2,warna:'KUNING',jTanam:132,kacang:'',pBedeng:10},
+    {id:16,bdg:3,warna:'PINK',jTanam:132,kacang:'',pBedeng:10},
+    {id:17,bdg:4,warna:'PINK',jTanam:132,kacang:'',pBedeng:10},
+    {id:18,bdg:5,warna:'PINK',jTanam:132,kacang:'',pBedeng:10},
+    {id:19,bdg:6,warna:'PINK',jTanam:132,kacang:'',pBedeng:10},
+    {id:20,bdg:7,warna:'PINK',jTanam:132,kacang:'',pBedeng:10},
+    {id:21,bdg:8,warna:'PINK',jTanam:132,kacang:'',pBedeng:10},
+    {id:22,bdg:9,warna:'PINK',jTanam:132,kacang:'',pBedeng:10},
+    {id:23,bdg:10,warna:'PINK',jTanam:132,kacang:'',pBedeng:10},
+    {id:24,bdg:11,warna:'KACANG',jTanam:132,kacang:'',pBedeng:10},
+    {id:25,bdg:12,warna:'KACANG',jTanam:88,kacang:'',pBedeng:8},
+    {id:26,bdg:13,warna:'PINK',jTanam:88,kacang:'',pBedeng:7}
+  ],
+  A3: [
+    {id:27,bdg:1,warna:'KACANG',jTanam:252,kacang:'',pBedeng:19},
+    {id:28,bdg:2,warna:'PUTIH',jTanam:252,kacang:'',pBedeng:19},
+    {id:29,bdg:3,warna:'PUTIH',jTanam:356,kacang:'',pBedeng:28},
+    {id:30,bdg:4,warna:'PUTIH',jTanam:470,kacang:'',pBedeng:29},
+    {id:31,bdg:5,warna:'PUTIH',jTanam:376,kacang:'',pBedeng:29},
+    {id:32,bdg:6,warna:'PUTIH',jTanam:376,kacang:'',pBedeng:29},
+    {id:33,bdg:7,warna:'PUTIH',jTanam:376,kacang:'',pBedeng:29},
+    {id:34,bdg:8,warna:'PUTIH',jTanam:376,kacang:'',pBedeng:29},
+    {id:35,bdg:9,warna:'ORANGE',jTanam:376,kacang:'',pBedeng:29},
+    {id:36,bdg:10,warna:'ORANGE',jTanam:376,kacang:'',pBedeng:29},
+    {id:37,bdg:11,warna:'ORANGE',jTanam:326,kacang:'',pBedeng:29},
+    {id:38,bdg:12,warna:'KACANG',jTanam:376,kacang:'',pBedeng:29},
+    {id:39,bdg:13,warna:'KACANG',jTanam:172,kacang:'',pBedeng:13}
+  ],
+  B: [
+    {id:40,bdg:1,warna:'SALEM',jTanam:256,kacang:'',pBedeng:20},
+    {id:41,bdg:2,warna:'SALEM',jTanam:260,kacang:'',pBedeng:19},
+    {id:42,bdg:3,warna:'SALEM',jTanam:268,kacang:'',pBedeng:20},
+    {id:43,bdg:4,warna:'SALEM',jTanam:272,kacang:'',pBedeng:21},
+    {id:44,bdg:5,warna:'SALEM',jTanam:276,kacang:'',pBedeng:21},
+    {id:45,bdg:6,warna:'SALEM',jTanam:350,kacang:'',pBedeng:22},
+    {id:46,bdg:7,warna:'SALEM',jTanam:284,kacang:'',pBedeng:23},
+    {id:47,bdg:8,warna:'SALEM',jTanam:292,kacang:'',pBedeng:23},
+    {id:48,bdg:9,warna:'SALEM',jTanam:300,kacang:'',pBedeng:23},
+    {id:49,bdg:10,warna:'SALEM',jTanam:304,kacang:'',pBedeng:23},
+    {id:50,bdg:11,warna:'PINK',jTanam:390,kacang:'',pBedeng:24},
+    {id:51,bdg:12,warna:'PINK',jTanam:316,kacang:'',pBedeng:24},
+    {id:52,bdg:13,warna:'PINK',jTanam:324,kacang:'',pBedeng:25},
+    {id:53,bdg:14,warna:'PINK',jTanam:324,kacang:'',pBedeng:24},
+    {id:54,bdg:15,warna:'PINK',jTanam:324,kacang:'',pBedeng:25},
+    {id:55,bdg:16,warna:'PINK',jTanam:324,kacang:'',pBedeng:24},
+    {id:56,bdg:17,warna:'PINK',jTanam:324,kacang:'',pBedeng:25},
+    {id:57,bdg:18,warna:'PINK',jTanam:324,kacang:'',pBedeng:24},
+    {id:58,bdg:19,warna:'PUTIH',jTanam:324,kacang:'',pBedeng:25},
+    {id:59,bdg:20,warna:'PUTIH',jTanam:324,kacang:'',pBedeng:24},
+    {id:60,bdg:21,warna:'KACANG',jTanam:324,kacang:'',pBedeng:25},
+    {id:61,bdg:22,warna:'KACANG',jTanam:324,kacang:'',pBedeng:24},
+    {id:62,bdg:23,warna:'PUTIH',jTanam:324,kacang:'',pBedeng:25},
+    {id:63,bdg:24,warna:'PUTIH',jTanam:324,kacang:'',pBedeng:24},
+    {id:64,bdg:25,warna:'PUTIH',jTanam:243,kacang:'',pBedeng:24}
+  ]
+};
+jtSubs[3] = { A1:[13], A2:[13], A3:[13], B:[25] };
+
+jtData[2] = {
+  A: [
+    {id:65,bdg:1,warna:'KUNING',jTanam:304,kacang:'',pBedeng:24},
+    {id:66,bdg:2,warna:'KUNING',jTanam:412,kacang:'',pBedeng:32},
+    {id:67,bdg:3,warna:'KUNING',jTanam:412,kacang:'',pBedeng:32},
+    {id:68,bdg:4,warna:'PUTIH',jTanam:436,kacang:'',pBedeng:36},
+    {id:69,bdg:5,warna:'PUTIH',jTanam:436,kacang:'',pBedeng:36},
+    {id:70,bdg:6,warna:'PUTIH',jTanam:480,kacang:'',pBedeng:36},
+    {id:71,bdg:7,warna:'PUTIH',jTanam:480,kacang:'',pBedeng:36},
+    {id:72,bdg:8,warna:'KUNING BR',jTanam:480,kacang:'',pBedeng:36},
+    {id:73,bdg:9,warna:'ORANGE BR',jTanam:448,kacang:'',pBedeng:36},
+    {id:74,bdg:10,warna:'PINK BR',jTanam:448,kacang:'',pBedeng:37},
+    {id:75,bdg:11,warna:'PINK BR',jTanam:448,kacang:'',pBedeng:37},
+    {id:76,bdg:12,warna:'PINK BR',jTanam:448,kacang:'',pBedeng:37},
+    {id:77,bdg:13,warna:'PINK BR',jTanam:440,kacang:'',pBedeng:38},
+    {id:78,bdg:14,warna:'PINK',jTanam:440,kacang:'',pBedeng:38},
+    {id:79,bdg:15,warna:'PUTIH',jTanam:440,kacang:'',pBedeng:36},
+    {id:80,bdg:16,warna:'SALEM',jTanam:444,kacang:'',pBedeng:35},
+    {id:81,bdg:17,warna:'SALEM',jTanam:436,kacang:'',pBedeng:33},
+    {id:82,bdg:18,warna:'SALEM',jTanam:318,kacang:'',pBedeng:30},
+    {id:83,bdg:19,warna:'SALEM',jTanam:396,kacang:'',pBedeng:29},
+    {id:84,bdg:20,warna:'SALEM',jTanam:356,kacang:'',pBedeng:26},
+    {id:85,bdg:21,warna:'SALEM',jTanam:333,kacang:'',pBedeng:26},
+    {id:86,bdg:22,warna:'SALEM',jTanam:316,kacang:'',pBedeng:21},
+    {id:87,bdg:23,warna:'SALEM',jTanam:277,kacang:'',pBedeng:21},
+    {id:88,bdg:24,warna:'SALEM',jTanam:277,kacang:'',pBedeng:20},
+    {id:89,bdg:25,warna:'KOLAM',jTanam:'',kacang:'',pBedeng:''},
+    {id:90,bdg:26,warna:'KOLAM',jTanam:'',kacang:'',pBedeng:''},
+    {id:91,bdg:27,warna:'SALEM',jTanam:260,kacang:'',pBedeng:19},
+    {id:92,bdg:28,warna:'SALEM',jTanam:260,kacang:'',pBedeng:19},
+    {id:93,bdg:29,warna:'SALEM',jTanam:252,kacang:'',pBedeng:18},
+    {id:94,bdg:30,warna:'MERAH',jTanam:260,kacang:'',pBedeng:19},
+    {id:95,bdg:31,warna:'MERAH',jTanam:260,kacang:'',pBedeng:19},
+    {id:96,bdg:32,warna:'MERAH',jTanam:264,kacang:'',pBedeng:20},
+    {id:97,bdg:33,warna:'MERAH',jTanam:260,kacang:'',pBedeng:19},
+    {id:98,bdg:34,warna:'MERAH',jTanam:260,kacang:'',pBedeng:18},
+    {id:99,bdg:35,warna:'MERAH',jTanam:260,kacang:'',pBedeng:18},
+    {id:100,bdg:36,warna:'MERAH',jTanam:252,kacang:'',pBedeng:17},
+    {id:101,bdg:37,warna:'MERAH',jTanam:252,kacang:'',pBedeng:17},
+    {id:102,bdg:38,warna:'MERAH',jTanam:252,kacang:'',pBedeng:17},
+    {id:103,bdg:39,warna:'MERAH',jTanam:252,kacang:'',pBedeng:17},
+    {id:104,bdg:40,warna:'MERAH',jTanam:252,kacang:'',pBedeng:17},
+    {id:105,bdg:41,warna:'MERAH',jTanam:240,kacang:'',pBedeng:16},
+    {id:106,bdg:42,warna:'MERAH',jTanam:240,kacang:'',pBedeng:16},
+    {id:107,bdg:43,warna:'PUTIH',jTanam:240,kacang:'',pBedeng:16},
+    {id:108,bdg:44,warna:'PUTIH',jTanam:240,kacang:'',pBedeng:16},
+    {id:109,bdg:45,warna:'PUTIH',jTanam:240,kacang:'',pBedeng:16},
+    {id:110,bdg:46,warna:'PUTIH',jTanam:240,kacang:'',pBedeng:16},
+    {id:111,bdg:47,warna:'PUTIH',jTanam:240,kacang:'',pBedeng:16},
+    {id:112,bdg:48,warna:'PUTIH',jTanam:240,kacang:'',pBedeng:16},
+    {id:113,bdg:49,warna:'PUTIH',jTanam:240,kacang:'',pBedeng:16},
+    {id:114,bdg:50,warna:'MERAH',jTanam:252,kacang:'',pBedeng:18},
+    {id:115,bdg:51,warna:'MERAH',jTanam:252,kacang:'',pBedeng:17},
+    {id:116,bdg:52,warna:'MERAH',jTanam:252,kacang:'',pBedeng:18},
+    {id:117,bdg:53,warna:'MERAH',jTanam:252,kacang:'',pBedeng:18},
+    {id:118,bdg:54,warna:'MERAH',jTanam:252,kacang:'',pBedeng:18},
+    {id:119,bdg:55,warna:'KACANG',jTanam:252,kacang:'',pBedeng:18},
+    {id:120,bdg:56,warna:'KACANG',jTanam:252,kacang:'',pBedeng:18},
+    {id:121,bdg:57,warna:'KACANG',jTanam:252,kacang:'',pBedeng:18},
+    {id:122,bdg:58,warna:'KACANG',jTanam:252,kacang:'',pBedeng:18},
+    {id:123,bdg:59,warna:'KACANG',jTanam:252,kacang:'',pBedeng:18},
+    {id:124,bdg:60,warna:'KACANG',jTanam:252,kacang:'',pBedeng:18},
+    {id:125,bdg:61,warna:'KACANG',jTanam:184,kacang:'',pBedeng:18},
+    {id:126,bdg:62,warna:'KACANG',jTanam:184,kacang:'',pBedeng:14},
+    {id:127,bdg:63,warna:'KACANG',jTanam:184,kacang:'',pBedeng:15},
+    {id:128,bdg:64,warna:'KACANG',jTanam:184,kacang:'',pBedeng:15},
+    {id:129,bdg:65,warna:'KACANG',jTanam:88,kacang:'',pBedeng:7},
+    {id:130,bdg:66,warna:'KACANG',jTanam:88,kacang:'',pBedeng:7},
+    {id:131,bdg:67,warna:'KACANG',jTanam:88,kacang:'',pBedeng:7},
+    {id:132,bdg:68,warna:'KACANG',jTanam:44,kacang:'',pBedeng:7}
+  ],
+  B: [
+    {id:133,bdg:4,warna:'PUTIH',jTanam:136,kacang:'',pBedeng:9},
+    {id:134,bdg:5,warna:'PUTIH',jTanam:156,kacang:'',pBedeng:11},
+    {id:135,bdg:6,warna:'PUTIH',jTanam:160,kacang:'',pBedeng:13},
+    {id:136,bdg:7,warna:'PUTIH',jTanam:168,kacang:'',pBedeng:13},
+    {id:137,bdg:8,warna:'PUTIH',jTanam:168,kacang:'',pBedeng:13},
+    {id:138,bdg:9,warna:'PUTIH',jTanam:168,kacang:'',pBedeng:13},
+    {id:139,bdg:10,warna:'PUTIH',jTanam:176,kacang:'',pBedeng:16},
+    {id:140,bdg:11,warna:'PUTIH',jTanam:184,kacang:'',pBedeng:16},
+    {id:141,bdg:12,warna:'PUTIH',jTanam:188,kacang:'',pBedeng:16},
+    {id:142,bdg:13,warna:'PUTIH',jTanam:204,kacang:'',pBedeng:16},
+    {id:143,bdg:14,warna:'PUTIH',jTanam:212,kacang:'',pBedeng:16},
+    {id:144,bdg:15,warna:'PUTIH',jTanam:212,kacang:'',pBedeng:17},
+    {id:145,bdg:16,warna:'SALEM',jTanam:212,kacang:'',pBedeng:17},
+    {id:146,bdg:17,warna:'SALEM',jTanam:216,kacang:'',pBedeng:17},
+    {id:147,bdg:18,warna:'SALEM',jTanam:216,kacang:'',pBedeng:17},
+    {id:148,bdg:19,warna:'SALEM',jTanam:216,kacang:'',pBedeng:17},
+    {id:149,bdg:20,warna:'SALEM',jTanam:295,kacang:'',pBedeng:25},
+    {id:150,bdg:21,warna:'SALEM',jTanam:320,kacang:'',pBedeng:25},
+    {id:151,bdg:22,warna:'SALEM',jTanam:336,kacang:'',pBedeng:26},
+    {id:152,bdg:23,warna:'SALEM',jTanam:336,kacang:'',pBedeng:26},
+    {id:153,bdg:24,warna:'SALEM',jTanam:336,kacang:'',pBedeng:27},
+    {id:154,bdg:25,warna:'SALEM',jTanam:336,kacang:'',pBedeng:27},
+    {id:155,bdg:26,warna:'SALEM',jTanam:336,kacang:'',pBedeng:27},
+    {id:156,bdg:27,warna:'SALEM',jTanam:336,kacang:'',pBedeng:27},
+    {id:157,bdg:28,warna:'SALEM',jTanam:336,kacang:'',pBedeng:27},
+    {id:158,bdg:29,warna:'SALEM',jTanam:420,kacang:'',pBedeng:28},
+    {id:159,bdg:30,warna:'MERAH',jTanam:252,kacang:'',pBedeng:20},
+    {id:160,bdg:31,warna:'MERAH',jTanam:252,kacang:'',pBedeng:20},
+    {id:161,bdg:32,warna:'MERAH',jTanam:248,kacang:'',pBedeng:19},
+    {id:162,bdg:33,warna:'MERAH',jTanam:248,kacang:'',pBedeng:19},
+    {id:163,bdg:34,warna:'MERAH',jTanam:248,kacang:'',pBedeng:19},
+    {id:164,bdg:35,warna:'MERAH',jTanam:236,kacang:'',pBedeng:17},
+    {id:165,bdg:36,warna:'MERAH',jTanam:236,kacang:'',pBedeng:17},
+    {id:166,bdg:37,warna:'MERAH',jTanam:228,kacang:'',pBedeng:17},
+    {id:167,bdg:38,warna:'MERAH',jTanam:224,kacang:'',pBedeng:17},
+    {id:168,bdg:39,warna:'MERAH',jTanam:224,kacang:'',pBedeng:17},
+    {id:169,bdg:40,warna:'MERAH',jTanam:224,kacang:'',pBedeng:17},
+    {id:170,bdg:41,warna:'MERAH',jTanam:212,kacang:'',pBedeng:16},
+    {id:171,bdg:42,warna:'MERAH',jTanam:212,kacang:'',pBedeng:16},
+    {id:172,bdg:43,warna:'PUTIH',jTanam:212,kacang:'',pBedeng:16},
+    {id:173,bdg:44,warna:'PUTIH',jTanam:212,kacang:'',pBedeng:16},
+    {id:174,bdg:45,warna:'PUTIH',jTanam:212,kacang:'',pBedeng:16},
+    {id:175,bdg:46,warna:'KUNING',jTanam:212,kacang:'',pBedeng:16},
+    {id:176,bdg:47,warna:'KUNING',jTanam:116,kacang:'',pBedeng:9},
+    {id:177,bdg:48,warna:'KUNING',jTanam:116,kacang:'',pBedeng:9},
+    {id:178,bdg:49,warna:'KUNING',jTanam:100,kacang:'',pBedeng:8},
+    {id:179,bdg:50,warna:'MERAH',jTanam:100,kacang:'',pBedeng:8},
+    {id:180,bdg:51,warna:'MERAH',jTanam:100,kacang:'',pBedeng:8},
+    {id:181,bdg:52,warna:'MERAH',jTanam:100,kacang:'',pBedeng:8},
+    {id:182,bdg:53,warna:'MERAH',jTanam:100,kacang:'',pBedeng:8},
+    {id:183,bdg:54,warna:'MERAH',jTanam:100,kacang:'',pBedeng:8},
+    {id:184,bdg:55,warna:'MERAH',jTanam:100,kacang:'',pBedeng:8},
+    {id:185,bdg:56,warna:'MERAH',jTanam:100,kacang:'',pBedeng:8},
+    {id:186,bdg:57,warna:'KACANG',jTanam:100,kacang:'',pBedeng:8},
+    {id:187,bdg:58,warna:'KACANG',jTanam:100,kacang:'',pBedeng:8},
+    {id:188,bdg:59,warna:'KACANG',jTanam:100,kacang:'',pBedeng:8},
+    {id:189,bdg:60,warna:'KACANG',jTanam:100,kacang:'',pBedeng:8},
+    {id:190,bdg:61,warna:'KACANG',jTanam:100,kacang:'',pBedeng:8},
+    {id:191,bdg:62,warna:'KACANG',jTanam:100,kacang:'',pBedeng:8},
+    {id:192,bdg:63,warna:'KACANG',jTanam:96,kacang:'',pBedeng:8},
+    {id:193,bdg:64,warna:'KACANG',jTanam:92,kacang:'',pBedeng:7},
+    {id:194,bdg:65,warna:'KACANG',jTanam:92,kacang:'',pBedeng:7},
+    {id:195,bdg:66,warna:'KACANG',jTanam:92,kacang:'',pBedeng:7},
+    {id:196,bdg:67,warna:'KACANG',jTanam:92,kacang:'',pBedeng:7},
+    {id:197,bdg:68,warna:'KACANG',jTanam:92,kacang:'',pBedeng:7}
+  ]
+};
+jtSubs[2] = { A:[13,25,41,68], B:[10,22,38,65] };
+
+let jtNextId = 198;
 function jtNewId(){ return jtNextId++; }
+
+// Pastikan SEMUA blok di semua lokasi (kecuali Kalibanger yang pakai grid terpisah)
+// selalu punya minimal 1 baris kosong siap-isi — supaya semua blok kelihatan sama
+// formatnya (bukan cuma Blok A yang ada baris input, blok lain kosong melompong).
+function jtNormalizeEmptyBlocks() {
+  Object.keys(JT_CONF).forEach(lokKey => {
+    const lok = parseInt(lokKey, 10);
+    if (lok === 1) return; // Kalibanger: grid spreadsheet tersinkron (kalGrid), bukan jtData
+    const conf = JT_CONF[lok];
+    if (!jtData[lok]) jtData[lok] = {};
+    conf.blok.forEach(blk => {
+      if (!Array.isArray(jtData[lok][blk]) || jtData[lok][blk].length === 0) {
+        jtData[lok][blk] = [{ id: jtNewId(), bdg:'', warna:'-', jTanam:'', kacang:'', pBedeng:'' }];
+      }
+    });
+  });
+}
+jtNormalizeEmptyBlocks(); // jalan sekali di awal (sebelum Firebase connect / kalau offline)
 
 // ── MENU (duplicate – kept for compat, delegates up) ──────
 // The real renderJumlahTanamanMenu is defined above (with Rekap 3 Tempat card)
@@ -3912,8 +4243,48 @@ function jtOnChange() {
   // Called from inline cell edits, refresh subtotal rows only
 }
 
+// ── ROW ACTION SHEET (menu titik-3 per baris) ──────────────
+// Dipakai di semua tabel Jumlah Tanaman (termasuk grid Kalibanger)
+// supaya tambah/hapus baris & subtotal bisa dilakukan di posisi mana saja,
+// tidak cuma di akhir tabel.
+let rmActions = [];
+function jtOpenRowMenu(title, actions) {
+  rmActions = actions;
+  document.getElementById('rm-title').textContent = title;
+  document.getElementById('rm-body').innerHTML = actions.map((a,i) => `
+    <button onclick="jtRunRowAction(${i})" style="width:100%;display:flex;align-items:center;gap:10px;
+      padding:12px 4px;background:none;border:none;border-bottom:1px solid var(--b);cursor:pointer;
+      font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:600;
+      color:${a.danger?'#c0392b':'var(--t)'};text-align:left">
+      <i class="ti ${a.icon}" style="font-size:17px;width:20px;text-align:center;${a.danger?'color:#c0392b':'color:var(--or)'}"></i>${a.label}
+    </button>`).join('')
+    + `<button onclick="jtCloseRowMenu()" style="width:100%;padding:11px;margin-top:8px;background:var(--bg);
+      border:1.5px solid var(--b);border-radius:var(--rs);font-weight:700;font-size:13px;color:var(--tm);cursor:pointer">Batal</button>`;
+  document.getElementById('RM').classList.add('show');
+}
+function jtRunRowAction(i) {
+  const a = rmActions[i];
+  jtCloseRowMenu();
+  if(!a) return;
+  if(a.danger && !confirm(a.confirmMsg || 'Yakin mau lanjutkan?')) return;
+  a.fn();
+}
+function jtCloseRowMenu(event) {
+  if(event && event.target !== event.currentTarget) return;
+  document.getElementById('RM').classList.remove('show');
+}
+function jtKebabBtn(title, actionsJs, styleOverride) {
+  // actionsJs = string JS array literal (aman karena selalu kita yang generate)
+  const st = styleOverride || 'background:#fdf3ea;border:1px solid #f0d9bd;color:#8a5a2a';
+  return `<button onclick="jtOpenRowMenu('${title}', ${actionsJs})"
+    style="${st};border-radius:6px;cursor:pointer;
+    padding:3px 9px;font-size:14px;font-weight:900;line-height:1" title="Aksi baris">⋮</button>`;
+}
+
 // ── RENDER UTAMA ──────────────────────────────────────────
 function renderJumlahTanaman(lok) {
+  CURRENT_LOC = lok;
+  if (lok === 1) { renderKalGrid(); return; } // Kalibanger pakai tampilan grid spreadsheet
   const conf = JT_CONF[lok];
   const hasK = conf.hasKacang;
 
@@ -3936,18 +4307,129 @@ function renderJumlahTanaman(lok) {
     <button class="btn-print" style="flex:1;min-width:80px;justify-content:center" onclick="jtPrint(${lok})"><i class="ti ti-printer"></i> Print</button>
   </div>
   <div style="font-size:11px;color:var(--tl);margin-bottom:10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:6px 10px">
-    💡 Baris <span style="background:#f97316;color:#fff;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:700">ORANGE</span> = subtotal. Gunakan <strong>+B</strong> untuk sisip baris & <strong>+S</strong> untuk sisip subtotal di bawah baris mana saja.
+    💡 Baris <span style="background:#f97316;color:#fff;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:700">ORANGE</span> = subtotal. Ketuk <strong>⋮</strong> di kanan tiap baris untuk tambah baris (atas/bawah), tambah subtotal, atau hapus baris — di posisi mana saja.
   </div>
 
-  <!-- Tabel semua blok side-by-side -->
+  <!-- Tabel blok -->
   <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px;border:1.5px solid #e0d0c0">
     <div id="jt-tbl-wrap-${lok}">
-      ${jtBuildAllBloksTable(lok, conf, hasK)}
+      ${jtRenderTblWrap(lok, conf, hasK)}
     </div>
   </div>`;
 
   html += jtBuildRekap(lok, conf, hasK);
   document.getElementById('MC').innerHTML = html;
+}
+
+// Router: Ngadikerso (3) pakai layout bertumpuk (A1→A2→A3 ke bawah, B di samping).
+// Lokasi lain tetap pakai tabel semua blok side-by-side.
+function jtRenderTblWrap(lok, conf, hasK) {
+  if (lok === 3) return jtBuildNgadikersoLayout(lok, conf, hasK);
+  return jtBuildAllBloksTable(lok, conf, hasK);
+}
+
+// ── Layout khusus Ngadikerso: semua blok (A1, A2, A3, B) ditumpuk 1 kolom penuh ke bawah ──
+// (sebelumnya A1-A3 kiri & B kanan berdampingan, tapi karena tinggi baris tiap blok beda-beda,
+//  barisnya jadi tidak sejajar dan keliatan "numpuk"/nabrak. Ditumpuk 1 kolom lebih aman & mudah dibaca.)
+function jtBuildNgadikersoLayout(lok, conf, hasK) {
+  const colors = ['#1a6b3c','#1a5c8a','#7C3AED','#b8820f'];
+  return `<div style="display:flex;flex-direction:column;gap:12px">
+    ${jtBuildSingleBlokTable(lok,'A1',hasK,colors[0])}
+    ${jtBuildSingleBlokTable(lok,'A2',hasK,colors[1])}
+    ${jtBuildSingleBlokTable(lok,'A3',hasK,colors[2])}
+    ${jtBuildSingleBlokTable(lok,'B',hasK,colors[3])}
+  </div>`;
+}
+
+// Tabel satu blok berdiri sendiri (dipakai layout Ngadikerso), tetap pakai menu aksi ⋮ per baris.
+function jtBuildSingleBlokTable(lok, blk, hasK, color) {
+  const data = jtData[lok][blk] || [];
+  const subs = (jtSubs[lok][blk] || []).slice().sort((a,b)=>a-b);
+  const seq = [];
+  let prev = 0;
+  subs.forEach((pos, si) => {
+    for(let i=prev; i<pos && i<data.length; i++) seq.push({type:'data', dataIdx:i, subIdx:si});
+    seq.push({type:'sub', from:prev, to:pos, subIdx:si});
+    prev = pos;
+  });
+  for(let i=prev; i<data.length; i++) seq.push({type:'data', dataIdx:i, subIdx:subs.length});
+
+  const thS = `background:${color}dd;color:#fff;padding:4px 4px;font-size:9px;font-weight:700;text-align:center`;
+  const inpS = 'width:100%;border:1.5px solid #e0d0c0;border-radius:5px;padding:3px 3px;font-size:11px;text-align:center;background:#fff;color:#1a0e05;min-width:34px';
+  const tdBase = 'padding:3px 4px;font-size:11px;border-bottom:1px solid #ecddd0;vertical-align:middle';
+  const totalCols = hasK ? 6 : 5;
+
+  let bodyRows = '';
+  seq.forEach((item, ri) => {
+    const even = ri % 2 === 0;
+    const rowBg = even ? '' : 'background:#fdf8f5';
+    if(item.type==='sub') {
+      const secRows = data.slice(item.from, item.to);
+      const {totJ,totK,totP,totB} = jtCompute(secRows);
+      const ss = `background:#f97316;color:#fff;font-weight:700;font-size:11px;padding:4px 4px;text-align:center;border:none`;
+      const subActions = `[
+        {label:'Tambah baris di bawah subtotal ini', icon:'ti-row-insert-bottom', fn:()=>jtSisipBaris(${lok},'${blk}',${item.to})},
+        {label:'Hapus subtotal ini', icon:'ti-trash', danger:true, confirmMsg:'Hapus baris subtotal ini?', fn:()=>jtHapusSubtotal(${lok},'${blk}',${item.subIdx})}
+      ]`;
+      bodyRows += `<tr>
+        <td style="${ss}">${totB||'-'}</td>
+        <td style="${ss};text-align:left;font-size:10px;letter-spacing:.5px">SUBTOTAL</td>
+        <td style="${ss}">${totJ||'-'}</td>
+        ${hasK ? `<td style="${ss}">${totK||'-'}</td>` : ''}
+        <td style="${ss}">${totP||'-'}</td>
+        <td style="${ss}">${jtKebabBtn('Subtotal Blok '+blk, subActions, 'background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.5);color:#fff')}</td>
+      </tr>`;
+    } else {
+      const di = item.dataIdx;
+      const r = data[di];
+      const wSel = `<select style="width:100%;border:1.5px solid #e0d0c0;border-radius:5px;padding:2px 3px;font-size:11px;background:#fff;color:#1a0e05"
+        onchange="jtSetField(${lok},'${blk}',${di},'warna',this.value)">
+        ${JT_WARNA_OPTS.map(w=>`<option value="${w}"${w===(r.warna||'-')?'selected':''}>${w}</option>`).join('')}
+      </select>`;
+      const rowActions = `[
+        {label:'Tambah baris di atas', icon:'ti-row-insert-top', fn:()=>jtSisipBaris(${lok},'${blk}',${di})},
+        {label:'Tambah baris di bawah', icon:'ti-row-insert-bottom', fn:()=>jtSisipBaris(${lok},'${blk}',${di+1})},
+        {label:'Tambah subtotal di bawah', icon:'ti-sum', fn:()=>jtSisipSubtotal(${lok},'${blk}',${di+1})},
+        {label:'Hapus baris ini', icon:'ti-trash', danger:true, confirmMsg:'Hapus baris BDG ${r.bdg||''} ini?', fn:()=>jtHapusBaris(${lok},'${blk}',${di})}
+      ]`;
+      bodyRows += `<tr style="${rowBg}">
+        <td style="${tdBase};text-align:center"><input type="number" value="${r.bdg||''}" placeholder="-" style="${inpS}" onchange="jtSetField(${lok},'${blk}',${di},'bdg',this.value)"></td>
+        <td style="${tdBase}">${wSel}</td>
+        <td style="${tdBase};text-align:center"><input type="number" value="${r.jTanam||''}" placeholder="0" style="${inpS}" onchange="jtSetField(${lok},'${blk}',${di},'jTanam',this.value)"></td>
+        ${hasK ? `<td style="${tdBase};text-align:center"><input type="number" value="${r.kacang||''}" placeholder="0" style="${inpS}" onchange="jtSetField(${lok},'${blk}',${di},'kacang',this.value)"></td>` : ''}
+        <td style="${tdBase};text-align:center"><input type="number" value="${r.pBedeng||''}" placeholder="0" style="${inpS}" onchange="jtSetField(${lok},'${blk}',${di},'pBedeng',this.value)"></td>
+        <td style="${tdBase};text-align:center">${jtKebabBtn('Blok '+blk+' — Baris', rowActions)}</td>
+      </tr>`;
+    }
+  });
+
+  const {totJ,totK,totP,totB} = jtCompute(data);
+  const ts = `background:#FFF3EB;font-weight:700;color:#C2500A;font-size:11px;padding:5px 4px;text-align:center;border-top:2px solid #C2500A`;
+  bodyRows += `<tr>
+    <td style="${ts}">${totB||'-'}</td>
+    <td style="${ts};text-align:left;letter-spacing:.5px">TOTAL</td>
+    <td style="${ts}">${totJ||'-'}</td>
+    ${hasK ? `<td style="${ts}">${totK||'-'}</td>` : ''}
+    <td style="${ts}">${totP||'-'}</td>
+    <td style="${ts}"></td>
+  </tr>`;
+
+  return `<table style="width:100%;border-collapse:collapse;border:1.5px solid #e0d0c0;border-radius:8px;overflow:hidden">
+    <thead>
+      <tr><th colspan="${totalCols}" style="background:${color};color:#fff;padding:5px 6px;font-size:11px;font-weight:700;text-align:center">BLOK ${blk}</th></tr>
+      <tr>
+        <th style="${thS};min-width:34px">BDG</th>
+        <th style="${thS};min-width:78px;text-align:left">WARNA</th>
+        <th style="${thS};min-width:42px">J.TANAM</th>
+        ${hasK ? `<th style="${thS};min-width:42px">KACANG</th>` : ''}
+        <th style="${thS};min-width:42px">P.BEDENG</th>
+        <th style="${thS};width:30px">⋮</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${bodyRows || `<tr><td colspan="${totalCols}" style="text-align:center;color:#bbb;padding:14px;font-size:11px">Belum ada data</td></tr>`}
+    </tbody>
+  </table>`;
 }
 
 function jtBuildAllBloksTable(lok, conf, hasK) {
@@ -3983,9 +4465,9 @@ function jtBuildAllBloksTable(lok, conf, hasK) {
   const maxRows = Math.max(...bloks.map(blk => seqs[blk].length), 1);
 
   // Header row 1: blok names spanning columns
-  // +1 col for hapus, +1 col for sisip actions
+  // +1 kolom aksi (titik-3): tambah atas/bawah, subtotal, hapus — semua dalam 1 menu
   const colsPerBlok = hasK ? 5 : 4;
-  const totalColsPerBlok = colsPerBlok + 2; // +hapus +sisip
+  const totalColsPerBlok = colsPerBlok + 1; // +aksi
 
   let thRow1 = '<tr>';
   bloks.forEach((blk, bi) => {
@@ -4005,24 +4487,9 @@ function jtBuildAllBloksTable(lok, conf, hasK) {
     thRow2 += `<th style="${thS};min-width:42px">J.TANAM</th>`;
     if(hasK) thRow2 += `<th style="${thS};min-width:42px">KACANG</th>`;
     thRow2 += `<th style="${thS};min-width:42px">P.BEDENG</th>`;
-    thRow2 += `<th style="${thS};width:22px"></th>`; // hapus
-    thRow2 += `<th style="${thS};width:44px;border-right:3px solid #fff">+</th>`; // sisip
+    thRow2 += `<th style="${thS};width:34px;border-right:3px solid #fff">⋮</th>`; // aksi (titik-3)
   });
   thRow2 += '</tr>';
-
-  // Tombol sisip — muncul di tiap baris, tergantung konteks
-  // Pada baris DATA: bisa tambah baris bawah (+B) atau tambah subtotal bawah (+S)
-  // Pada baris SUBTOTAL: bisa tambah baris bawah (+B) atau tambah subtotal bawah (+S)
-  function sisipBtn(lok, blk, afterDataIdx, afterSubIdx) {
-    // afterDataIdx = index data array, sisip setelah baris ini
-    // afterSubIdx  = subtotal array index untuk geser
-    return `<div style="display:flex;flex-direction:column;gap:2px;align-items:center">
-      <button onclick="jtSisipBaris(${lok},'${blk}',${afterDataIdx})"
-        style="background:#edf7f1;border:1px solid #b2d8c2;border-radius:4px;color:#1a6b3c;cursor:pointer;padding:1px 5px;font-size:10px;font-weight:700;line-height:1.4;width:36px" title="Tambah baris di bawah">+B</button>
-      <button onclick="jtSisipSubtotal(${lok},'${blk}',${afterDataIdx})"
-        style="background:#fff7ed;border:1px solid #fed7aa;border-radius:4px;color:#f97316;cursor:pointer;padding:1px 5px;font-size:10px;font-weight:700;line-height:1.4;width:36px" title="Tambah subtotal di bawah">+S</button>
-    </div>`;
-  }
 
   // Body rows
   let bodyHtml = '';
@@ -4047,11 +4514,12 @@ function jtBuildAllBloksTable(lok, conf, hasK) {
         row += `<td style="${ss}">${totJ||'-'}</td>`;
         if(hasK) row += `<td style="${ss}">${totK||'-'}</td>`;
         row += `<td style="${ss}">${totP||'-'}</td>`;
-        // hapus subtotal
-        row += `<td style="${ss}"><button onclick="jtHapusSubtotal(${lok},'${blk}',${item.subIdx})"
-          style="background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.5);border-radius:5px;color:#fff;cursor:pointer;padding:1px 5px;font-size:11px;line-height:1">✕</button></td>`;
-        // sisip setelah subtotal: afterDataIdx = item.to (posisi setelah subtotal dalam data)
-        row += `<td style="${ss};${borderRight}">${sisipBtn(lok, blk, item.to, item.subIdx)}</td>`;
+        // aksi baris subtotal: tambah baris di bawah / hapus subtotal ini
+        const subActions = `[
+          {label:'Tambah baris di bawah subtotal ini', icon:'ti-row-insert-bottom', fn:()=>jtSisipBaris(${lok},'${blk}',${item.to})},
+          {label:'Hapus subtotal ini', icon:'ti-trash', danger:true, confirmMsg:'Hapus baris subtotal ini?', fn:()=>jtHapusSubtotal(${lok},'${blk}',${item.subIdx})}
+        ]`;
+        row += `<td style="${ss};${borderRight}">${jtKebabBtn('Subtotal Blok '+blk, subActions, 'background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.5);color:#fff')}</td>`;
       } else {
         const di = item.dataIdx;
         const r = data[di];
@@ -4064,13 +4532,14 @@ function jtBuildAllBloksTable(lok, conf, hasK) {
         row += `<td style="${tdBase};${rowBg};text-align:center"><input type="number" value="${r.jTanam||''}" placeholder="0" style="${inpS}" onchange="jtSetField(${lok},'${blk}',${di},'jTanam',this.value)"></td>`;
         if(hasK) row += `<td style="${tdBase};${rowBg};text-align:center"><input type="number" value="${r.kacang||''}" placeholder="0" style="${inpS}" onchange="jtSetField(${lok},'${blk}',${di},'kacang',this.value)"></td>`;
         row += `<td style="${tdBase};${rowBg};text-align:center"><input type="number" value="${r.pBedeng||''}" placeholder="0" style="${inpS}" onchange="jtSetField(${lok},'${blk}',${di},'pBedeng',this.value)"></td>`;
-        // hapus baris
-        row += `<td style="${tdBase};${rowBg};text-align:center">
-          <button onclick="jtHapusBaris(${lok},'${blk}',${di})"
-            style="background:#fef2f2;border:1px solid #fecaca;border-radius:5px;color:#c0392b;cursor:pointer;padding:1px 5px;font-size:11px">✕</button>
-        </td>`;
-        // sisip setelah baris ini: afterDataIdx = di+1
-        row += `<td style="${tdBase};${rowBg};${borderRight};text-align:center">${sisipBtn(lok, blk, di+1, item.subIdx)}</td>`;
+        // aksi baris (titik-3): tambah atas/bawah, subtotal, hapus — semua dalam 1 menu
+        const rowActions = `[
+          {label:'Tambah baris di atas', icon:'ti-row-insert-top', fn:()=>jtSisipBaris(${lok},'${blk}',${di})},
+          {label:'Tambah baris di bawah', icon:'ti-row-insert-bottom', fn:()=>jtSisipBaris(${lok},'${blk}',${di+1})},
+          {label:'Tambah subtotal di bawah', icon:'ti-sum', fn:()=>jtSisipSubtotal(${lok},'${blk}',${di+1})},
+          {label:'Hapus baris ini', icon:'ti-trash', danger:true, confirmMsg:'Hapus baris BDG ${r.bdg||''} ini?', fn:()=>jtHapusBaris(${lok},'${blk}',${di})}
+        ]`;
+        row += `<td style="${tdBase};${rowBg};${borderRight};text-align:center">${jtKebabBtn('Blok '+blk+' — Baris', rowActions)}</td>`;
       }
     });
     row += '</tr>';
@@ -4087,7 +4556,6 @@ function jtBuildAllBloksTable(lok, conf, hasK) {
     totalRow += `<td style="${ts}">${totJ||'-'}</td>`;
     if(hasK) totalRow += `<td style="${ts}">${totK||'-'}</td>`;
     totalRow += `<td style="${ts}">${totP||'-'}</td>`;
-    totalRow += `<td style="${ts}"></td>`;
     totalRow += `<td style="${ts};border-right:3px solid #e0d0c0"></td>`;
   });
   totalRow += '</tr>';
@@ -4110,7 +4578,7 @@ function jtSisipBaris(lok, blk, afterDataIdx) {
   jtSubs[lok][blk] = (jtSubs[lok][blk]||[]).map(s => s >= afterDataIdx ? s+1 : s);
   const conf = JT_CONF[lok];
   const wrap = document.getElementById(`jt-tbl-wrap-${lok}`);
-  if(wrap) wrap.innerHTML = jtBuildAllBloksTable(lok, conf, conf.hasKacang);
+  if(wrap) wrap.innerHTML = jtRenderTblWrap(lok, conf, conf.hasKacang);
   const rekapEl = document.getElementById(`jt-rekap-${lok}`);
   if(rekapEl) rekapEl.outerHTML = jtBuildRekap(lok, conf, conf.hasKacang);
   toast('✅ Baris disisipkan');
@@ -4126,7 +4594,7 @@ function jtSisipSubtotal(lok, blk, afterDataIdx) {
   jtSubs[lok][blk] = [...new Set(subs)].sort((a,b)=>a-b);
   const conf = JT_CONF[lok];
   const wrap = document.getElementById(`jt-tbl-wrap-${lok}`);
-  if(wrap) wrap.innerHTML = jtBuildAllBloksTable(lok, conf, conf.hasKacang);
+  if(wrap) wrap.innerHTML = jtRenderTblWrap(lok, conf, conf.hasKacang);
   const rekapEl = document.getElementById(`jt-rekap-${lok}`);
   if(rekapEl) rekapEl.outerHTML = jtBuildRekap(lok, conf, conf.hasKacang);
   toast('✅ Subtotal disisipkan');
@@ -4136,7 +4604,7 @@ function jtSwitchTab(lok, activeBlk) {
   // Kept for compatibility — now just re-renders the full table
   const conf = JT_CONF[lok];
   const wrap = document.getElementById(`jt-tbl-wrap-${lok}`);
-  if(wrap) wrap.innerHTML = jtBuildAllBloksTable(lok, conf, conf.hasKacang);
+  if(wrap) wrap.innerHTML = jtRenderTblWrap(lok, conf, conf.hasKacang);
 }
 
 function jtBuildTable(lok, conf, hasK) {
@@ -4144,6 +4612,7 @@ function jtBuildTable(lok, conf, hasK) {
 }
 
 function jtHapusSubtotal(lok, blk, subIdx) {
+  if(!canEditLoc(lok)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
   if(!jtSubs[lok] || !jtSubs[lok][blk]) return;
   const subs = (jtSubs[lok][blk]||[]).slice().sort((a,b)=>a-b);
   subs.splice(subIdx, 1);
@@ -4249,13 +4718,14 @@ function jtSetField(lok, blk, idx, field, val) {
   const conf = JT_CONF[lok];
   // Re-render tabel semua blok
   const wrap = document.getElementById(`jt-tbl-wrap-${lok}`);
-  if(wrap) wrap.innerHTML = jtBuildAllBloksTable(lok, conf, conf.hasKacang);
+  if(wrap) wrap.innerHTML = jtRenderTblWrap(lok, conf, conf.hasKacang);
   // Re-render rekap
   const rekapEl = document.getElementById(`jt-rekap-${lok}`);
   if(rekapEl) rekapEl.outerHTML = jtBuildRekap(lok, conf, conf.hasKacang);
 }
 
 function jtHapusBaris(lok, blk, idx) {
+  if(!canEditLoc(lok)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
   if(!jtData[lok] || !jtData[lok][blk]) return;
   jtData[lok][blk].splice(idx, 1);
   const subs = jtSubs[lok][blk] || [];
@@ -4274,7 +4744,7 @@ function jtTambahBaris(lok) {
   const firstBlk = conf.blok[0];
   document.getElementById('mo-body').innerHTML = `
     <div style="font-size:11px;color:var(--tl);background:#edf7f1;border:1px solid #c3e8d4;border-radius:8px;padding:6px 10px;margin-bottom:10px">
-      💡 Baris baru ditambahkan di akhir blok. Gunakan tombol <strong>+B</strong> di tabel untuk sisipkan di posisi tertentu.
+      💡 Baris baru ditambahkan di akhir blok. Ketuk <strong>⋮</strong> di tabel untuk sisipkan di posisi tertentu (atas/bawah baris manapun).
     </div>
     <div class="fg2">
       <label>Pilih Blok</label>
@@ -4400,6 +4870,518 @@ function jtBuildRekap(lok, conf, hasK) {
       </table>
     </div>
   </div>`;
+}
+
+// ══════════════════════════════════════════════════════════
+// ── KALIBANGER GRID (tampilan spreadsheet — baris sinkron antar Blok A/B/C) ──
+// ══════════════════════════════════════════════════════════
+// Struktur: kalGrid.A/B/C = array 57+ baris, index 0 = baris grid ke-1.
+// Isi tiap baris: {bdg, warna, jTanam, kacang, pBedeng} atau null (baris kosong utk blok itu).
+// kalSections = posisi baris (1-based, kumulatif) tempat subtotal muncul. Baris terakhir = baris TOTAL.
+// Blok A punya kolom KACANG tersendiri; Blok B & C tidak (KACANG cuma jadi pilihan WARNA, disorot hijau).
+let kalGrid = {
+A: [
+  {bdg:1,warna:'PINK',jTanam:208,pBedeng:17},
+  {bdg:2,warna:'PINK',jTanam:208,pBedeng:17},
+  {bdg:3,warna:'PINK',jTanam:208,pBedeng:17},
+  {bdg:4,warna:'PINK',jTanam:208,pBedeng:17},
+  {bdg:5,warna:'PINK',jTanam:212,pBedeng:17},
+  {bdg:6,warna:'PINK',jTanam:212,pBedeng:17},
+  {bdg:7,warna:'PINK',jTanam:212,pBedeng:17},
+  {bdg:8,warna:'PINK',jTanam:216,pBedeng:17},
+  {bdg:9,warna:'POP',jTanam:216,pBedeng:17},
+  {bdg:10,warna:'POP',jTanam:216,pBedeng:17},
+  {bdg:11,warna:'POP',jTanam:220,pBedeng:18},
+  {bdg:12,warna:'KUNING',jTanam:220,pBedeng:18},
+  {bdg:13,warna:'KUNING',jTanam:232,pBedeng:18},
+  {bdg:14,warna:'KUNING',jTanam:232,pBedeng:18},
+  {bdg:15,warna:'KUNING',jTanam:244,pBedeng:19},
+  {bdg:16,warna:'KUNING',jTanam:244,pBedeng:19},
+  {bdg:17,warna:'KUNING',jTanam:244,pBedeng:19},
+  {bdg:18,warna:'KUNING',jTanam:244,pBedeng:19},
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  {bdg:25,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:26,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:27,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:28,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:29,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:30,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:31,warna:'KACANG',jTanam:252,pBedeng:20},
+  {bdg:32,warna:'KACANG',jTanam:256,pBedeng:20},
+  {bdg:33,warna:'KACANG',jTanam:256,pBedeng:20},
+  {bdg:34,warna:'KACANG',jTanam:268,pBedeng:21},
+  {bdg:35,warna:'POP',jTanam:268,pBedeng:21},
+  {bdg:36,warna:'POP',jTanam:272,pBedeng:21},
+  {bdg:37,warna:'SALEM',jTanam:272,pBedeng:22},
+  {bdg:38,warna:'SALEM',jTanam:296,pBedeng:23},
+  {bdg:39,warna:'SALEM',jTanam:308,pBedeng:24},
+  {bdg:40,warna:'SALEM',jTanam:308,pBedeng:24},
+  {bdg:41,warna:'SALEM',jTanam:312,pBedeng:25},
+  {bdg:42,warna:'SALEM',jTanam:324,pBedeng:25},
+  {bdg:43,warna:'SALEM',jTanam:336,pBedeng:26},
+  {bdg:44,warna:'SALEM',jTanam:336,pBedeng:26},
+  {bdg:45,warna:'SALEM',jTanam:348,pBedeng:27},
+  {bdg:46,warna:'SALEM',jTanam:352,pBedeng:27},
+  {bdg:47,warna:'SALEM',jTanam:352,pBedeng:28},
+  {bdg:48,warna:'SALEM',jTanam:364,pBedeng:28},
+  {bdg:50,warna:'SALEM',jTanam:376,pBedeng:29},
+  {bdg:51,warna:'SALEM',jTanam:384,pBedeng:30},
+  {bdg:52,warna:'POP',jTanam:384,pBedeng:30},
+  {bdg:49,warna:'POP',jTanam:376,pBedeng:29},
+  {bdg:53,warna:'KACANG',jTanam:384,pBedeng:30},
+  {bdg:54,warna:'KACANG',jTanam:388,pBedeng:30},
+  {bdg:55,warna:'KACANG',jTanam:400,pBedeng:31},
+  {bdg:56,warna:'KACANG',jTanam:408,pBedeng:32},
+  {bdg:57,warna:'KACANG',jTanam:306,pBedeng:32}
+],
+B: [
+  {bdg:1,warna:'PUTIH',jTanam:164,pBedeng:13},
+  {bdg:2,warna:'PUTIH',jTanam:164,pBedeng:13},
+  {bdg:3,warna:'PUTIH',jTanam:164,pBedeng:13},
+  {bdg:4,warna:'PUTIH',jTanam:164,pBedeng:13},
+  {bdg:5,warna:'PUTIH',jTanam:240,pBedeng:25},
+  {bdg:6,warna:'PUTIH',jTanam:332,pBedeng:25},
+  {bdg:7,warna:'POP',jTanam:340,pBedeng:25},
+  {bdg:8,warna:'POP',jTanam:340,pBedeng:26},
+  {bdg:9,warna:'POP',jTanam:342,pBedeng:26},
+  {bdg:10,warna:'POP',jTanam:342,pBedeng:26},
+  {bdg:11,warna:'POP',jTanam:344,pBedeng:26},
+  {bdg:12,warna:'POP',jTanam:344,pBedeng:26},
+  {bdg:13,warna:'PUTIH',jTanam:356,pBedeng:27},
+  {bdg:14,warna:'PUTIH',jTanam:356,pBedeng:27},
+  {bdg:15,warna:'PUTIH',jTanam:360,pBedeng:28},
+  {bdg:16,warna:'PUTIH',jTanam:360,pBedeng:28},
+  {bdg:17,warna:'KUNING',jTanam:368,pBedeng:28},
+  {bdg:18,warna:'KUNING',jTanam:368,pBedeng:28},
+  {bdg:19,warna:'KUNING',jTanam:368,pBedeng:28},
+  {bdg:20,warna:'SALEM',jTanam:368,pBedeng:28},
+  {bdg:21,warna:'SALEM',jTanam:372,pBedeng:29},
+  {bdg:22,warna:'SALEM',jTanam:372,pBedeng:29},
+  {bdg:23,warna:'SALEM',jTanam:380,pBedeng:29},
+  {bdg:24,warna:'PINK',jTanam:380,pBedeng:29},
+  {bdg:25,warna:'PINK',jTanam:380,pBedeng:29},
+  {bdg:26,warna:'PINK',jTanam:392,pBedeng:30},
+  {bdg:27,warna:'PINK',jTanam:392,pBedeng:30},
+  {bdg:28,warna:'PINK',jTanam:392,pBedeng:30},
+  {bdg:29,warna:'PINK',jTanam:396,pBedeng:30},
+  {bdg:30,warna:'PINK',jTanam:396,pBedeng:30},
+  {bdg:31,warna:'PINK',jTanam:396,pBedeng:30},
+  {bdg:32,warna:'PINK',jTanam:404,pBedeng:31},
+  {bdg:33,warna:'PINK',jTanam:404,pBedeng:31},
+  {bdg:34,warna:'PINK',jTanam:412,pBedeng:31},
+  {bdg:35,warna:'PINK',jTanam:412,pBedeng:31},
+  {bdg:36,warna:'MERAH',jTanam:412,pBedeng:31},
+  {bdg:37,warna:'MERAH',jTanam:412,pBedeng:31},
+  {bdg:38,warna:'MERAH',jTanam:412,pBedeng:31},
+  {bdg:39,warna:'MERAH',jTanam:412,pBedeng:31},
+  {bdg:40,warna:'MERAH',jTanam:412,pBedeng:31},
+  {bdg:41,warna:'PUTIH',jTanam:412,pBedeng:31},
+  {bdg:42,warna:'PUTIH',jTanam:412,pBedeng:31},
+  {bdg:43,warna:'PUTIH',jTanam:412,pBedeng:31},
+  {bdg:44,warna:'PUTIH',jTanam:412,pBedeng:31},
+  {bdg:45,warna:'PUTIH',jTanam:412,pBedeng:31},
+  {bdg:46,warna:'PUTIH',jTanam:412,pBedeng:31},
+  {bdg:47,warna:'POP',jTanam:412,pBedeng:31},
+  {bdg:48,warna:'MERAH',jTanam:412,pBedeng:31},
+  {bdg:50,warna:'MERAH',jTanam:412,pBedeng:31},
+  {bdg:51,warna:'MERAH',jTanam:412,pBedeng:31},
+  {bdg:52,warna:'MERAH',jTanam:412,pBedeng:31},
+  {bdg:49,warna:'KACANG',jTanam:515,pBedeng:31},
+  {bdg:53,warna:'KACANG',jTanam:412,pBedeng:31},
+  {bdg:54,warna:'KACANG',jTanam:412,pBedeng:31},
+  {bdg:55,warna:'KACANG',jTanam:515,pBedeng:31},
+  {bdg:56,warna:'KACANG',jTanam:50,pBedeng:31},
+  null
+],
+C: [
+  null,
+  null,
+  null,
+  null,
+  null,
+  null,
+  {bdg:7,warna:'MERAH',jTanam:244,pBedeng:19},
+  {bdg:8,warna:'MERAH',jTanam:244,pBedeng:19},
+  {bdg:9,warna:'MERAH',jTanam:244,pBedeng:19},
+  {bdg:10,warna:'MERAH',jTanam:244,pBedeng:19},
+  {bdg:11,warna:'MERAH',jTanam:244,pBedeng:19},
+  {bdg:12,warna:'MERAH',jTanam:244,pBedeng:19},
+  {bdg:13,warna:'MERAH',jTanam:244,pBedeng:19},
+  {bdg:14,warna:'MERAH',jTanam:244,pBedeng:19},
+  {bdg:15,warna:'MERAH',jTanam:244,pBedeng:19},
+  {bdg:16,warna:'MERAH',jTanam:244,pBedeng:19},
+  {bdg:17,warna:'MERAH',jTanam:244,pBedeng:19},
+  {bdg:18,warna:'MERAH',jTanam:244,pBedeng:19},
+  {bdg:19,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:20,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:21,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:22,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:23,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:24,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:25,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:26,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:27,warna:'MERAH',jTanam:244,pBedeng:19},
+  {bdg:28,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:29,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:30,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:31,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:32,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:33,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:34,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:35,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:36,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:37,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:38,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:39,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:40,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:41,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:42,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:43,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:44,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:45,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:46,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:47,warna:'KACANG',jTanam:244,pBedeng:19},
+  {bdg:48,warna:'PUTIH',jTanam:244,pBedeng:19},
+  {bdg:50,warna:'PUTIH',jTanam:244,pBedeng:19},
+  {bdg:51,warna:'PUTIH',jTanam:244,pBedeng:19},
+  {bdg:52,warna:'PUTIH',jTanam:244,pBedeng:19},
+  {bdg:49,warna:'PUTIH',jTanam:244,pBedeng:19},
+  {bdg:53,warna:'PUTIH',jTanam:244,pBedeng:19},
+  {bdg:54,warna:'KUNING',jTanam:244,pBedeng:19},
+  {bdg:55,warna:'KUNING',jTanam:244,pBedeng:19},
+  null,
+  null
+]
+};
+let kalSections = [18,33,45,57];
+let kalMaxRow = 57;
+
+const KAL_WARNA_OPTS = JT_WARNA_OPTS;
+
+function kalEnsureLen() {
+  ['A','B','C'].forEach(blk => {
+    while (kalGrid[blk].length < kalMaxRow) kalGrid[blk].push(null);
+  });
+}
+
+function kalCompute(blk, from, to) {
+  // from/to = 1-based inclusive
+  let j=0,p=0;
+  for (let i=from; i<=to; i++) {
+    const r = kalGrid[blk][i-1];
+    if (r) { j += parseFloat(r.jTanam||0); p += parseFloat(r.pBedeng||0); }
+  }
+  return {j,p};
+}
+
+function kalGrandCompute(from, to) {
+  let j=0,p=0;
+  ['A','B','C'].forEach(blk => { const s = kalCompute(blk, from, to); j+=s.j; p+=s.p; });
+  return {j,p};
+}
+
+function renderKalGrid() {
+  kalEnsureLen();
+  let html = `
+  <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+    <button class="btn-save" style="padding:8px 14px;font-size:12px;border:none;cursor:pointer;background:linear-gradient(135deg,#1a6b3c,#1a8a4c);flex:1;min-width:110px"
+      onclick="jtKalAddRow()">
+      <i class="ti ti-plus"></i> Tambah Baris
+    </button>
+    <button class="btn-save" style="padding:8px 14px;font-size:12px;border:none;cursor:pointer;background:#f97316;flex:1;min-width:110px"
+      onclick="jtKalAddSubtotal()">
+      <i class="ti ti-sum"></i> + Subtotal
+    </button>
+    <button class="btn-print" style="flex:1;min-width:80px;justify-content:center" onclick="jtKalPrint()"><i class="ti ti-printer"></i> Print</button>
+  </div>
+  <div style="font-size:11px;color:var(--tl);margin-bottom:10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:6px 10px">
+    💡 Baris tersinkron antar Blok A/B/C persis kayak spreadsheet. <strong>Tambah Baris</strong> nambah 1 baris kosong di akhir. Ketuk <strong>⋮</strong> di kanan tiap baris untuk sisip baris (atas/bawah), tambah subtotal, atau hapus baris di posisi manapun.
+  </div>
+  <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px;border:1.5px solid #e0d0c0">
+    <div id="kal-tbl-wrap">${jtKalBuildTable()}</div>
+  </div>`;
+  html += jtKalBuildRekap();
+  document.getElementById('MC').innerHTML = html;
+}
+
+function kalRefreshTable() {
+  const wrap = document.getElementById('kal-tbl-wrap');
+  if (wrap) wrap.innerHTML = jtKalBuildTable();
+  const rekapEl = document.getElementById('kal-rekap');
+  if (rekapEl) rekapEl.outerHTML = jtKalBuildRekap();
+}
+
+function jtKalBuildTable() {
+  kalEnsureLen();
+  const thTitle = `background:linear-gradient(135deg,#E8650A,#C2500A);color:#fff;padding:8px;font-size:13px;font-family:'Playfair Display',serif;text-align:center`;
+  const thBlok  = `background:#c3e8d4;color:#15803D;padding:5px 4px;font-size:11px;font-weight:700;text-align:center;border:1px solid #a8d5b8`;
+  const thCol   = `background:#fff;color:#1a0e05;font-weight:700;font-size:9px;padding:4px 3px;border:1px solid #e0d0c0;text-align:center;white-space:nowrap`;
+  const inpS = 'width:100%;border:1px solid #e0d0c0;border-radius:4px;padding:2px 2px;font-size:10px;text-align:center;background:#fff;color:#1a0e05;min-width:32px';
+  const selS = 'width:100%;border:1px solid #e0d0c0;border-radius:4px;padding:2px 1px;font-size:10px;text-align:center;background:#fff;color:#1a0e05;min-width:56px';
+  const tdBase = 'padding:2px 3px;font-size:10px;border-bottom:1px solid #ecddd0;vertical-align:middle';
+
+  let thead = `<tr><th colspan="16" style="${thTitle}">JUMLAH TANAMAN KALIBANGER</th></tr>`;
+  thead += `<tr>
+    <th colspan="5" style="${thBlok}">BLOK A</th>
+    <th colspan="4" style="${thBlok}">BLOK B</th>
+    <th colspan="4" style="${thBlok}">BLOK C</th>
+    <th colspan="2" style="background:#fff;border:1px solid #e0d0c0"></th>
+    <th style="background:#fff;border:1px solid #e0d0c0"></th>
+  </tr>`;
+  thead += `<tr>
+    <th style="${thCol}">BDG</th><th style="${thCol};text-align:left">WARNA</th><th style="${thCol}">J.TANAM</th><th style="${thCol}">KACANG</th><th style="${thCol}">P BEDENG</th>
+    <th style="${thCol}">BDG</th><th style="${thCol};text-align:left">WARNA</th><th style="${thCol}">J.TANAM</th><th style="${thCol}">P BEDENG</th>
+    <th style="${thCol}">BDG</th><th style="${thCol};text-align:left">WARNA</th><th style="${thCol}">J.TANAM</th><th style="${thCol}">P BEDENG</th>
+    <th style="${thCol}">J.TANAM</th><th style="${thCol}">P.BDG</th>
+    <th style="${thCol}">⋮</th>
+  </tr>`;
+
+  function warnaSelect(blk, idx, r) {
+    const isKacang = r && r.warna === 'KACANG';
+    const bg = isKacang ? 'background:#c3e8d4' : 'background:#fff';
+    return `<select style="${selS};${bg}" onchange="jtKalSetCell('${blk}',${idx},'warna',this.value)">
+      ${KAL_WARNA_OPTS.map(w=>`<option value="${w}"${w===((r&&r.warna)||'-')?' selected':''}>${w}</option>`).join('')}
+    </select>`;
+  }
+  function numInput(blk, idx, field, val) {
+    return `<input type="number" value="${val==null||val===''?'':val}" style="${inpS}" onchange="jtKalSetCell('${blk}',${idx},'${field}',this.value)">`;
+  }
+
+  let body = '';
+  let prevBoundary = 0;
+  const sections = kalSections.slice().sort((a,b)=>a-b);
+  let si = 0;
+
+  for (let row = 1; row <= kalMaxRow; row++) {
+    const idx = row - 1;
+    const rA = kalGrid.A[idx], rB = kalGrid.B[idx], rC = kalGrid.C[idx];
+    const rowBg = row % 2 === 0 ? '' : 'background:#fdf8f5';
+    body += `<tr>
+      <td style="${tdBase};${rowBg};text-align:center">${numInput('A',idx,'bdg',rA?rA.bdg:'')}</td>
+      <td style="${tdBase};${rowBg}">${warnaSelect('A',idx,rA)}</td>
+      <td style="${tdBase};${rowBg};text-align:center">${numInput('A',idx,'jTanam',rA?rA.jTanam:'')}</td>
+      <td style="${tdBase};${rowBg};text-align:center">${numInput('A',idx,'kacang',rA?rA.kacang:'')}</td>
+      <td style="${tdBase};${rowBg};text-align:center">${numInput('A',idx,'pBedeng',rA?rA.pBedeng:'')}</td>
+      <td style="${tdBase};${rowBg};text-align:center">${numInput('B',idx,'bdg',rB?rB.bdg:'')}</td>
+      <td style="${tdBase};${rowBg}">${warnaSelect('B',idx,rB)}</td>
+      <td style="${tdBase};${rowBg};text-align:center">${numInput('B',idx,'jTanam',rB?rB.jTanam:'')}</td>
+      <td style="${tdBase};${rowBg};text-align:center">${numInput('B',idx,'pBedeng',rB?rB.pBedeng:'')}</td>
+      <td style="${tdBase};${rowBg};text-align:center">${numInput('C',idx,'bdg',rC?rC.bdg:'')}</td>
+      <td style="${tdBase};${rowBg}">${warnaSelect('C',idx,rC)}</td>
+      <td style="${tdBase};${rowBg};text-align:center">${numInput('C',idx,'jTanam',rC?rC.jTanam:'')}</td>
+      <td style="${tdBase};${rowBg};text-align:center">${numInput('C',idx,'pBedeng',rC?rC.pBedeng:'')}</td>
+      <td style="${tdBase};${rowBg}"></td>
+      <td style="${tdBase};${rowBg}"></td>
+      <td style="${tdBase};${rowBg};text-align:center">${jtKebabBtn('Baris '+row, `[
+        {label:'Tambah baris di atas', icon:'ti-row-insert-top', fn:()=>jtKalSisipBaris(${row},'above')},
+        {label:'Tambah baris di bawah', icon:'ti-row-insert-bottom', fn:()=>jtKalSisipBaris(${row},'below')},
+        {label:'Tambah subtotal di bawah', icon:'ti-sum', fn:()=>jtKalAddSubtotalAt(${row})},
+        {label:'Hapus baris ini', icon:'ti-trash', danger:true, confirmMsg:'Hapus baris ${row} (Blok A/B/C sekaligus)?', fn:()=>jtKalHapusBaris(${row})}
+      ]`)}</td>
+    </tr>`;
+
+    if (si < sections.length && sections[si] === row) {
+      const a = kalCompute('A', prevBoundary+1, row);
+      const b = kalCompute('B', prevBoundary+1, row);
+      const c = kalCompute('C', prevBoundary+1, row);
+      const g = kalGrandCompute(prevBoundary+1, row);
+      const ss = `background:#f97316;color:#fff;font-weight:700;font-size:10px;padding:4px 3px;text-align:center;border:none`;
+      const isLast = si === sections.length - 1;
+      const subRow = row;
+      body += `<tr>
+        <td style="${ss}"></td><td style="${ss}"></td><td style="${ss}">${a.j||'-'}</td><td style="${ss}"></td><td style="${ss}">${a.p||'-'}</td>
+        <td style="${ss}"></td><td style="${ss}"></td><td style="${ss}">${b.j||'-'}</td><td style="${ss}">${b.p||'-'}</td>
+        <td style="${ss}"></td><td style="${ss}"></td><td style="${ss}">${c.j||'-'}</td><td style="${ss}">${c.p||'-'}</td>
+        <td style="${ss}">${g.j||'-'}</td><td style="${ss}">${g.p||'-'}</td>
+        <td style="${ss}">${jtKebabBtn('Subtotal baris '+subRow, `[
+          {label:'Tambah baris di bawah subtotal ini', icon:'ti-row-insert-bottom', fn:()=>jtKalSisipBaris(${subRow},'below')},
+          {label:'Hapus subtotal ini', icon:'ti-trash', danger:true, confirmMsg:'Hapus subtotal ini?', fn:()=>jtKalHapusSubtotalAt(${subRow})}
+        ]`, 'background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.5);color:#fff')}</td>
+      </tr>`;
+      prevBoundary = row;
+      si++;
+      if (isLast) {
+        // Baris GRAND TOTAL keseluruhan (semua section digabung)
+        const gt = kalGrandCompute(1, row);
+        const gs = `background:#fff;padding:4px 3px;border:1px solid #e0d0c0`;
+        const gsN = `background:#FFF3EB;color:#C2500A;font-weight:800;font-size:11px;padding:4px 3px;text-align:center;border:1px solid #C2500A`;
+        body += `<tr>
+          <td style="${gs}" colspan="14"></td>
+          <td style="${gsN}">${gt.j||'-'}</td><td style="${gsN}">${gt.p||'-'}</td>
+        </tr>`;
+      }
+    }
+  }
+
+  return `<table style="width:100%;border-collapse:collapse;min-width:900px">
+    <thead>${thead}</thead>
+    <tbody>${body}</tbody>
+  </table>`;
+}
+
+function jtKalSetCell(blk, idx, field, val) {
+  if(!canEditLoc(1)){toast('🔒 Anda hanya punya akses lihat di sini');kalRefreshTable();return;}
+  kalEnsureLen();
+  if (!kalGrid[blk][idx]) kalGrid[blk][idx] = {bdg:'',warna:'-',jTanam:'',kacang:'',pBedeng:''};
+  kalGrid[blk][idx][field] = val;
+  kalRefreshTable();
+  clearTimeout(kalSaveTimer);
+  kalSaveTimer = setTimeout(saveKalGrid, 1200);
+}
+
+function jtKalAddRow() {
+  if(!canEditLoc(1)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
+  kalMaxRow++;
+  kalEnsureLen();
+  kalRefreshTable();
+  clearTimeout(kalSaveTimer);
+  kalSaveTimer = setTimeout(saveKalGrid, 800);
+  toast('✅ Baris ditambahkan');
+}
+
+function jtKalAddSubtotal() {
+  if(!canEditLoc(1)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
+  if (kalSections.includes(kalMaxRow)) { toast('⚠️ Baris terakhir sudah jadi subtotal'); return; }
+  kalSections.push(kalMaxRow);
+  kalSections.sort((a,b)=>a-b);
+  kalRefreshTable();
+  saveKalGrid();
+  toast('✅ Subtotal ditambahkan');
+}
+
+// Sisip 1 baris kosong (Blok A/B/C sekaligus, tetap sinkron) di atas/bawah baris nomor `rn` (1-based)
+function jtKalSisipBaris(rn, mode) {
+  if(!canEditLoc(1)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
+  kalEnsureLen();
+  const R = mode === 'above' ? rn : rn + 1; // posisi 1-based baris baru
+  const insertPos = R - 1; // index 0-based
+  ['A','B','C'].forEach(blk => kalGrid[blk].splice(insertPos, 0, null));
+  kalMaxRow++;
+  kalSections = kalSections.map(s => s >= R ? s + 1 : s);
+  kalRefreshTable();
+  clearTimeout(kalSaveTimer);
+  kalSaveTimer = setTimeout(saveKalGrid, 800);
+  toast('✅ Baris disisipkan');
+}
+
+// Hapus baris nomor `rn` (1-based) dari Blok A/B/C sekaligus
+function jtKalHapusBaris(rn) {
+  if(!canEditLoc(1)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
+  if (kalMaxRow <= 1) { toast('⚠️ Minimal harus ada 1 baris'); return; }
+  const idx0 = rn - 1;
+  ['A','B','C'].forEach(blk => kalGrid[blk].splice(idx0, 1));
+  kalMaxRow--;
+  kalSections = [...new Set(kalSections.map(s => s >= rn ? s - 1 : s).filter(s => s > 0))].sort((a,b)=>a-b);
+  kalRefreshTable();
+  clearTimeout(kalSaveTimer);
+  kalSaveTimer = setTimeout(saveKalGrid, 800);
+  toast('🗑️ Baris dihapus');
+}
+
+// Tambah subtotal tepat setelah baris nomor `rn` (bisa di posisi manapun, bukan cuma akhir)
+function jtKalAddSubtotalAt(rn) {
+  if(!canEditLoc(1)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
+  if (kalSections.includes(rn)) { toast('⚠️ Baris ini sudah jadi subtotal'); return; }
+  kalSections.push(rn);
+  kalSections.sort((a,b)=>a-b);
+  kalRefreshTable();
+  saveKalGrid();
+  toast('✅ Subtotal ditambahkan');
+}
+
+function jtKalHapusSubtotalAt(rn) {
+  if(!canEditLoc(1)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
+  kalSections = kalSections.filter(s => s !== rn);
+  kalRefreshTable();
+  saveKalGrid();
+  toast('🗑️ Subtotal dihapus');
+}
+
+// Rekap gabungan per warna (Blok A+B+C jadi satu) — sebelumnya hilang di tampilan grid Kalibanger
+function jtKalBuildRekap() {
+  const rekapWarna = {};
+  JT_WARNA_OPTS.filter(w=>w!=='-').forEach(w => rekapWarna[w] = {jTanam:0, kacang:0});
+  let totalBedeng = 0;
+  ['A','B','C'].forEach(blk => {
+    (kalGrid[blk]||[]).forEach(r => {
+      if(!r) return;
+      totalBedeng += parseFloat(r.bdg||0);
+      const w = r.warna || '-';
+      if(w==='-') return;
+      if(!rekapWarna[w]) rekapWarna[w] = {jTanam:0, kacang:0};
+      rekapWarna[w].jTanam += parseFloat(r.jTanam||0);
+      rekapWarna[w].kacang += parseFloat(r.kacang||0);
+    });
+  });
+  let grandJ=0, grandK=0;
+  Object.values(rekapWarna).forEach(v => { grandJ+=v.jTanam; grandK+=v.kacang; });
+  const warnaAda = Object.entries(rekapWarna).filter(([w,v]) => v.jTanam>0 || v.kacang>0);
+  const rekapRows = warnaAda.map(([w,v]) => `
+    <tr>
+      <td style="font-size:10px;padding:4px 6px;font-weight:600">${w}</td>
+      <td style="text-align:right;font-weight:700;color:#1a6b3c;font-size:10px;padding:4px 6px">${v.jTanam||'-'}</td>
+      <td style="text-align:right;color:#7C3AED;font-size:10px;padding:4px 6px">${v.kacang||'-'}</td>
+    </tr>`).join('');
+
+  return `<div id="kal-rekap" style="margin-top:12px">
+    <div class="sec">Rekap — Kalibanger</div>
+    <div style="display:inline-flex;align-items:center;gap:8px;background:var(--orp);border:1px solid var(--orm);border-radius:8px;padding:4px 12px;margin-bottom:8px">
+      <i class="ti ti-layout-grid" style="font-size:13px;color:var(--or)"></i>
+      <span style="font-size:11px;color:var(--tm);font-weight:600">Total Bedeng:</span>
+      <span style="font-size:14px;font-weight:800;color:var(--or)">${totalBedeng}</span>
+    </div>
+    <div class="tbl-wrap" style="border-radius:8px">
+      <table style="min-width:160px;border-collapse:collapse">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:5px 6px;font-size:9px;background:linear-gradient(135deg,#1a6b3c,#2d8a50)">WARNA</th>
+            <th style="padding:5px 6px;font-size:9px;text-align:right;background:linear-gradient(135deg,#1a6b3c,#2d8a50)">J.TANAMAN</th>
+            <th style="padding:5px 6px;font-size:9px;text-align:right;background:linear-gradient(135deg,#1a6b3c,#2d8a50)">KACANG</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rekapRows || `<tr><td colspan="3" style="text-align:center;color:#999;padding:10px;font-size:11px">Belum ada data</td></tr>`}
+        </tbody>
+        <tfoot>
+          <tr style="background:var(--orp)">
+            <td style="font-weight:700;color:var(--or);padding:5px 6px;font-size:10px">TOTAL</td>
+            <td style="text-align:right;font-weight:700;color:var(--or);padding:5px 6px;font-size:10px">${grandJ}</td>
+            <td style="text-align:right;font-weight:700;color:#7C3AED;padding:5px 6px;font-size:10px">${grandK}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>`;
+}
+
+let kalSaveTimer = null;
+function saveKalGrid() {
+  fbSave('kalGrid', kalGrid);
+  fbSave('kalSections', kalSections);
+  fbSave('kalMaxRow', kalMaxRow);
+}
+
+function jtKalPrint() {
+  const tbl = jtKalBuildTable()
+    .replace(/<select[^>]*onchange="jtKalSetCell\('[A-Z]',\d+,'warna',this\.value\)"[^>]*>[\s\S]*?<\/select>/g, m => {
+      const sel = m.match(/value="([^"]*)"\s+selected/);
+      return `<span>${sel ? sel[1] : ''}</span>`;
+    })
+    .replace(/<input[^>]*value="([^"]*)"[^>]*>/g, (m,v) => `<span>${v}</span>`)
+    .replace(/<button onclick="jtOpenRowMenu[\s\S]*?<\/button>/g, ''); // kolom aksi (⋮) tidak perlu diprint
+  const rekap = jtKalBuildRekap();
+  const html = PX.open('Jumlah Tanaman Kalibanger')
+    + PX.header('Jumlah Tanaman — Kalibanger', 'Rekap seluruh Blok A, B, C')
+    + `<style>table td,table th{border:1px solid #ddd}</style>`
+    + tbl
+    + rekap
+    + PX.close();
+  PX.doOpen(html);
 }
 
 // ── SAVE MODAL JT ─────────────────────────────────────────
@@ -4774,6 +5756,7 @@ function renderPlastikUVMenu() {
 
 // ── RENDER UTAMA ──────────────────────────────────────────
 function renderPlastikUV(lok) {
+  CURRENT_LOC = lok;
   const conf = PUV_CONF[lok];
   if (!puvData[lok]) puvData[lok] = PUV_SEED.data[lok];
   if (!puvCells[lok]) puvCells[lok] = PUV_SEED.cells[lok] || {};
@@ -4881,6 +5864,7 @@ function puvCloseMenu(){ hideMO(); }
 
 // ── ACTIONS ───────────────────────────────────────────────
 function puvTambahRumah(lok) {
+  if(!canEditLoc(lok)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
   const d = puvData[lok];
   const rumahRows = d.rows.filter(r=>r.type==='rumah');
   const nextNum = rumahRows.length + 1;
@@ -4895,6 +5879,7 @@ function puvTambahRumah(lok) {
 }
 
 function puvTambahSub(lok, rumahId) {
+  if(!canEditLoc(lok)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
   const d = puvData[lok];
   const rId = parseInt(rumahId);
   const siblings = d.rows.filter(r=>r.type==='sub' && r.rumahId===rId);
@@ -4915,6 +5900,7 @@ function puvTambahSub(lok, rumahId) {
 }
 
 function puvHapusRumah(lok, rumahId) {
+  if(!canEditLoc(lok)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
   const rId = parseInt(rumahId);
   puvData[lok].rows = puvData[lok].rows.filter(r => !(r.id===rId || (r.type==='sub' && r.rumahId===rId)));
   renderPlastikUV(lok);
@@ -4923,6 +5909,7 @@ function puvHapusRumah(lok, rumahId) {
 }
 
 function puvHapusSub(lok, subId) {
+  if(!canEditLoc(lok)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
   const sId = parseInt(subId);
   puvData[lok].rows = puvData[lok].rows.filter(r => r.id!==sId);
   delete puvCells[lok][sId];
@@ -4932,6 +5919,7 @@ function puvHapusSub(lok, subId) {
 }
 
 function puvTambahKolom(lok) {
+  if(!canEditLoc(lok)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
   puvData[lok].cols.push('');
   renderPlastikUV(lok);
   savePUV();
@@ -4939,6 +5927,7 @@ function puvTambahKolom(lok) {
 }
 
 function puvHapusKolom(lok, ci) {
+  if(!canEditLoc(lok)){toast('🔒 Anda hanya punya akses lihat di sini');return;}
   puvData[lok].cols.splice(ci,1);
   Object.values(puvCells[lok]).forEach(rowCells => {
     const newCells = {};
