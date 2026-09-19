@@ -1289,6 +1289,18 @@ function togglePassVis() {
     ico.className = 'ti ti-eye';
   }
 }
+function toggleAkPassVis(inputId, iconId) {
+  const inp = document.getElementById(inputId);
+  const ico = document.getElementById(iconId);
+  if (!inp || !ico) return;
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    ico.className = 'ti ti-eye-off';
+  } else {
+    inp.type = 'password';
+    ico.className = 'ti ti-eye';
+  }
+}
 
 function doLogin() {
   const u = document.getElementById('l-user').value.trim().toLowerCase();
@@ -1749,8 +1761,15 @@ function openEditAkun(uid) {
     <div class="fg2"><label>Username</label>
       <input class="fi2" type="text" id="ak-user" value="${u.username}" autocapitalize="none">
     </div>
-    <div class="fg2"><label>Password Baru <span style="font-weight:400;text-transform:none;letter-spacing:0">(kosongkan jika tidak diganti)</span></label>
-      <input class="fi2" type="password" id="ak-pass" placeholder="Isi untuk ganti password" autocomplete="new-password">
+    <div class="fg2"><label>Password</label>
+      <div style="position:relative">
+        <input class="fi2" type="password" id="ak-pass" value="${(u.pass||u.password||'').replace(/"/g,'&quot;')}" placeholder="Password" autocomplete="new-password" style="padding-right:40px">
+        <button type="button" onclick="toggleAkPassVis('ak-pass','ak-pass-eye')"
+          style="position:absolute;right:0;top:0;bottom:0;width:38px;background:none;border:none;
+            cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--tl);font-size:16px"
+          aria-label="Lihat password"><i class="ti ti-eye" id="ak-pass-eye"></i></button>
+      </div>
+      <div style="font-size:10px;color:var(--tl);margin-top:3px">Ubah isinya untuk mengganti password</div>
     </div>
     ${!isSelf ? `<div class="fg2"><label>Role</label><select class="fi2" id="ak-role">${roleOpts}</select></div>` : `<div class="info-row"><span style="color:var(--tl)">Role</span><span class="info-val"><span class="badge b-or">${roleName[u.role]}</span></span></div>`}`;
   showMO();
