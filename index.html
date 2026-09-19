@@ -1086,8 +1086,8 @@ function isiJamCepat(inputId, prevId){
   el.value='8:00';
   krPreviewJam(el, prevId);
 }
-function mcScrollGet(){ const w=document.querySelector('#MC .tbl-wrap, #MC .puv-tablewrap'); return { x:w?w.scrollLeft:0, y:window.scrollY||window.pageYOffset||0 }; }
-function mcScrollSet(pos){ const w=document.querySelector('#MC .tbl-wrap, #MC .puv-tablewrap'); if(w) w.scrollLeft=pos.x; window.scrollTo(0,pos.y); }
+function mcScrollGet(){ const w=document.querySelector('#MC .tbl-wrap, #MC .puv-tablewrap'); return { x:w?w.scrollLeft:0, yin:w?w.scrollTop:0, y:window.scrollY||window.pageYOffset||0 }; }
+function mcScrollSet(pos){ const w=document.querySelector('#MC .tbl-wrap, #MC .puv-tablewrap'); if(w){ w.scrollLeft=pos.x; w.scrollTop=pos.yin||0; } window.scrollTo(0,pos.y); }
 function krPreviewMenit(inp, outId){
   const out=document.getElementById(outId); if(!out) return;
   const v=inp.value.trim();
