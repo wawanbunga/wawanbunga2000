@@ -466,10 +466,11 @@ function fbLoadAll() {
     }
 
     // Karyawan
-    if (d.karyawan) karyawan = Object.values(d.karyawan);
+    if (d.karyawan) karyawan = normKaryawan(d.karyawan);
 
     // Tarif lembur (Rp/jam)
     if (d.lemburRate) lemburRate = d.lemburRate;
+    if (d.lemburRateHist) lemburRateHist = d.lemburRateHist;
 
     // Absen & Lembur (object flat)
     if (d.absenData)  absenData  = d.absenData;
@@ -514,10 +515,14 @@ function fbLoadAll() {
     if (d.bedengSetup) bedengSetup = d.bedengSetup;
 
     // Absen Sawah Gondang (terpisah)
-    if (d.karyawanSG)   karyawanSG   = Object.values(d.karyawanSG);
+    if (d.karyawanSG)   karyawanSG   = normKaryawan(d.karyawanSG);
     if (d.absenDataSG)  absenDataSG  = d.absenDataSG;
     if (d.lemburDataSG) lemburDataSG = d.lemburDataSG;
     if (d.lemburRateSG) lemburRateSG = d.lemburRateSG;
+    if (d.lemburRateSGHist) lemburRateSGHist = d.lemburRateSGHist;
+
+    // Migrasi sekali-jalan: beri ID tetap ke karyawan & ubah kunci absen/lembur lama (nomor urut) ke ID
+    migrasiIdKaryawan(true);
 
     // Setelah load selesai, setup listener realtime & tampilkan app
     fbSetupListeners();
@@ -553,6 +558,7 @@ function fbLoadAll() {
   }).catch(e => {
     // Gagal load (mungkin offline saat pertama kali) — coba dari localStorage
     loadFromLocalStorage();
+    migrasiIdKaryawan(false);
     hideFbLoad();
     fbReady = true;
     showToastWarn('⚠️ Offline — data dari penyimpanan lokal');
@@ -564,7 +570,7 @@ function fbSetupListeners() {
   const paths = [
     'users','karyawan','absenData','lemburData','kasData',
     'panenData','obatData','dripData','bunga','penjualanData',
-    'matunData','jtData','jtSubs','puvData','puvCells','lemburRate',
+    'matunData','jtData','jtSubs','puvData','puvCells','lemburRate','lemburRateHist','lemburRateSGHist',
     'karyawanSG','absenDataSG','lemburDataSG','lemburRateSG','bedengSetup',
     'kalGrid','kalSections','kalMaxRow'
   ];
@@ -583,7 +589,7 @@ function applyRemoteData(path, val) {
       USERS.length = 0;
       Object.values(val).forEach(u => USERS.push(u));
       break;
-    case 'karyawan':        karyawan      = Object.values(val); break;
+    case 'karyawan':        karyawan      = normKaryawan(val); break;
     case 'absenData':       absenData     = val; break;
     case 'lemburData':      lemburData    = val; break;
     case 'kasData':         kasData       = val; break;
@@ -601,10 +607,12 @@ function applyRemoteData(path, val) {
     case 'puvData':         puvData  = mergePUVData(val); break;
     case 'puvCells':        puvCells = mergePUVCells(val); break;
     case 'lemburRate':      lemburRate    = val; break;
-    case 'karyawanSG':      karyawanSG    = Object.values(val); break;
+    case 'karyawanSG':      karyawanSG    = normKaryawan(val); break;
     case 'absenDataSG':     absenDataSG   = val; break;
     case 'lemburDataSG':    lemburDataSG  = val; break;
     case 'lemburRateSG':    lemburRateSG  = val; break;
+    case 'lemburRateHist':  lemburRateHist   = val; break;
+    case 'lemburRateSGHist':lemburRateSGHist = val; break;
     case 'bedengSetup':     bedengSetup   = val; break;
   }
   // Re-render halaman aktif jika sudah login
@@ -675,6 +683,7 @@ function loadFromLocalStorage() {
     'panenData','obatData','dripData','bunga','penjualanData',
     'matunData','jtData','jtSubs','puvData','puvCells',
     'karyawanSG','absenDataSG','lemburDataSG','lemburRateSG','bedengSetup',
+    'lemburRate','lemburRateHist','lemburRateSGHist',
     'kalGrid','kalSections','kalMaxRow'
   ];
   keys.forEach(k => {
@@ -712,7 +721,7 @@ function showToastWarn(msg) {
 
 // ── FUNGSI SAVE TIAP MODUL (dipanggil setelah setiap perubahan) ──
 function saveUsers()       { return fbSave('users',         arrToObj(USERS,'id')); }
-function saveKaryawan()    { return fbSave('karyawan',      arrToObj(karyawan,'nama')); }
+function saveKaryawan()    { return fbSave('karyawan',      krToObj(karyawan)); }
 function saveAbsen()       { return fbSave('absenData',     absenData); }
 function saveLembur()      { return fbSave('lemburData',    lemburData); }
 function saveLemburRate()  { return fbSave('lemburRate',    lemburRate); }
@@ -726,16 +735,333 @@ function saveMatun()       { return fbSave('matunData',     matunData); }
 function saveJT()          { return fbSave('jtData',        jtData); }
 function saveJTSubs()      { return fbSave('jtSubs',        jtSubs); }
 function savePUV()         { fbSave('puvData',puvData); fbSave('puvCells',puvCells); }
-function saveKaryawanSG()   { return fbSave('karyawanSG',   arrToObj(karyawanSG,'nama')); }
+function saveKaryawanSG()   { return fbSave('karyawanSG',   krToObj(karyawanSG)); }
 function saveAbsenSG()      { return fbSave('absenDataSG',  absenDataSG); }
 function saveLemburSG()     { return fbSave('lemburDataSG', lemburDataSG); }
 function saveLemburRateSG() { return fbSave('lemburRateSG', lemburRateSG); }
+function saveLemburRateHist()   { return fbSave('lemburRateHist',   lemburRateHist); }
+function saveLemburRateSGHist() { return fbSave('lemburRateSGHist', lemburRateSGHist); }
 function saveBedeng()       { return fbSave('bedengSetup',  bedengSetup); }
 
 function arrToObj(arr, keyField) {
   const o = {};
   arr.forEach((item,i) => { o[item[keyField] || i] = item; });
   return o;
+}
+
+// ══════════════════════════════════════════════════════════
+// ── KARYAWAN: ID TETAP, STATUS "BERHENTI BEKERJA", MIGRASI ──
+// Absen & lembur disimpan dengan kunci ID karyawan (bukan nomor urut),
+// jadi menghapus/menambah orang tidak menggeser data siapa pun.
+// kr.keluar = 'YYYY-MM' → bulan TERAKHIR kerja. Nama tampil di bulan tsb
+// dan bulan-bulan sebelumnya, tidak tampil di bulan sesudahnya.
+// ══════════════════════════════════════════════════════════
+function newKrId(){ return 'k'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+
+// Firebase mengembalikan objek terurut abjad → urutkan ulang sesuai field "urut"
+function normKaryawan(val){
+  const arr = (Array.isArray(val) ? val : Object.values(val||{})).filter(Boolean);
+  return arr.sort((a,b)=>(a.urut==null?1e9:a.urut)-(b.urut==null?1e9:b.urut));
+}
+// Simpan sebagai objek berkunci ID + catat urutan
+function krToObj(arr){
+  const o={};
+  arr.forEach((k,i)=>{ if(!k.id) k.id=newKrId(); k.urut=i; o[k.id]=k; });
+  return o;
+}
+function krAktif(kr, ym){ return (!kr.mulai || ym>=kr.mulai) && (!kr.keluar || ym<=kr.keluar); }
+function krAktifRentang(kr, ymAwal, ymAkhir){ return (!kr.mulai || ymAkhir>=kr.mulai) && (!kr.keluar || ymAwal<=kr.keluar); }
+function krJumlahAktif(arr, ym){ return arr.filter(k=>krAktif(k,ym)).length; }
+function krLabelBulan(ym){ const p=String(ym).split('-').map(Number); return (monthN[p[1]]||'')+' '+p[0]; }
+function krIdDariKunci(key){ const p=String(key).split('-'); return p[0]==='L' ? p[3] : p[2]; }
+
+// Migrasi sekali-jalan (kunci lama "2026-07-3-15" → "2026-07-<id>-15")
+function krMigrasiSet(arr, absen, lembur){
+  const dipakai = new Set(arr.filter(k=>k.id).map(k=>k.id));
+  arr.forEach((k,i)=>{
+    if(k.id) return;
+    let id='k'+String(i+1).padStart(3,'0');   // deterministik → aman kalau 2 HP migrasi bersamaan
+    if(dipakai.has(id)) id=newKrId();
+    k.id=id; dipakai.add(id);
+  });
+  const idDi = i => (arr[i] && arr[i].id) || null;
+  const A={}, L={};
+  Object.keys(absen||{}).forEach(key=>{
+    const m=key.match(/^(\d{4}-\d{2})-(\d+)-(\d+)$/);
+    if(!m){ A[key]=absen[key]; return; }
+    const id=idDi(+m[2]); if(id) A[m[1]+'-'+id+'-'+m[3]]=absen[key];
+  });
+  Object.keys(lembur||{}).forEach(key=>{
+    const m=key.match(/^L-(\d{4}-\d{2})-(\d+)-(\d+)$/);
+    if(!m){ L[key]=lembur[key]; return; }
+    const id=idDi(+m[2]); if(id) L['L-'+m[1]+'-'+id+'-'+m[3]]=lembur[key];
+  });
+  return {absen:A, lembur:L};
+}
+function migrasiIdKaryawan(viaDb){
+  const perluK = karyawan.length>0   && karyawan.some(k=>!k.id);
+  const perluS = karyawanSG.length>0 && karyawanSG.some(k=>!k.id);
+  if(!perluK && !perluS) return;
+  const kosongNull = o => (o && Object.keys(o).length) ? o : null;
+  const payload = {};
+  // Cadangan data LAMA (sebelum diubah) — bisa dibuka di Firebase: /backupMigrasi
+  try {
+    payload['backupMigrasi/'+Date.now()] = JSON.parse(JSON.stringify({karyawan,absenData,lemburData,karyawanSG,absenDataSG,lemburDataSG}));
+  } catch(e){}
+  if(perluK){
+    const r = krMigrasiSet(karyawan, absenData, lemburData);
+    absenData = r.absen; lemburData = r.lembur;
+    payload['karyawan']   = krToObj(karyawan);
+    payload['absenData']  = kosongNull(r.absen);
+    payload['lemburData'] = kosongNull(r.lembur);
+  }
+  if(perluS){
+    const r = krMigrasiSet(karyawanSG, absenDataSG, lemburDataSG);
+    absenDataSG = r.absen; lemburDataSG = r.lembur;
+    payload['karyawanSG']   = krToObj(karyawanSG);
+    payload['absenDataSG']  = kosongNull(r.absen);
+    payload['lemburDataSG'] = kosongNull(r.lembur);
+  }
+  Object.keys(payload).forEach(p=>{
+    if(p.indexOf('backupMigrasi')===0) return;
+    try{ localStorage.setItem(LS_PREFIX+p, JSON.stringify(payload[p])); }catch(e){}
+  });
+  const antri = ()=>Object.keys(payload).forEach(p=>enqueueOffline(p, payload[p]));
+  if(viaDb && db){
+    db.ref().update(payload).catch(e=>{ console.warn('migrasi gagal, diantrikan', e); antri(); });   // 1 paket atomik: semua berhasil atau tidak sama sekali
+  } else antri();
+  console.log('✅ Migrasi ID karyawan selesai');
+}
+
+// ── Menu Data Karyawan (dipakai Kebun & Sawah Gondang) ──
+const KRX = {
+  kebun:{ get arr(){return karyawan;},   get absen(){return absenData;},   get lembur(){return lemburData;},
+          render(){renderKaryawan();},   simpanKr(){saveKaryawan();},   simpanSemua(){saveKaryawan();saveAbsen();saveLembur();},
+          add:'openAddKr()', edit:'openEditKr' },
+  sg:   { get arr(){return karyawanSG;}, get absen(){return absenDataSG;}, get lembur(){return lemburDataSG;},
+          render(){renderKaryawanSG();}, simpanKr(){saveKaryawanSG();}, simpanSemua(){saveKaryawanSG();saveAbsenSG();saveLemburSG();},
+          add:'openAddKrSG()', edit:'openEditKrSG' }
+};
+const krTerbuka = {kebun:false, sg:false};
+
+function renderDaftarKr(k){
+  const X=KRX[k];
+  const aktif=[], keluar=[];
+  X.arr.forEach((kr,i)=>{ (kr.keluar?keluar:aktif).push({kr,i}); });
+  let html=`<div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+    <button class="btn-save" style="padding:9px 16px;font-size:13px;border:none;cursor:pointer" onclick="${X.add}"><i class="ti ti-plus" aria-hidden="true"></i> Tambah</button>
+  </div><div class="cd">`;
+  if(!aktif.length) html+=`<div style="padding:14px;font-size:12px;color:var(--tl);text-align:center">Belum ada karyawan aktif</div>`;
+  aktif.forEach(({kr,i})=>{
+    html+=`<div class="li">
+      <div class="av">${initials(kr.nama)}</div>
+      <div style="flex:1"><div class="wn">${kr.nama}</div>
+        <div class="ws">${fmtRp(krGaji(kr,krBulanSekarang()))}/hari · <span style="color:var(--or);font-weight:700">${kr.tipe}</span>${kr.mulai?' · mulai '+krLabelBulan(kr.mulai):''}${krInfoNaik(kr)}</div>
+      </div>
+      <div style="display:flex;gap:5px">
+        <button class="bsm bsm-o" onclick="${X.edit}(${i})" aria-label="Edit"><i class="ti ti-edit" aria-hidden="true"></i></button>
+        <button class="bsm bsm-r" style="font-size:11px;font-weight:700;white-space:nowrap" onclick="krBukaStop('${k}',${i})" aria-label="Berhenti bekerja"><i class="ti ti-user-minus" aria-hidden="true"></i> Berhenti</button>
+      </div>
+    </div>`;
+  });
+  html+=`</div>`;
+  if(keluar.length){
+    html+=`<details ${krTerbuka[k]?'open':''} ontoggle="krTerbuka['${k}']=this.open" style="margin-top:14px">
+      <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--tl);padding:6px 2px">Sudah keluar (${keluar.length}) — data lama tetap tersimpan</summary>
+      <div class="cd" style="margin-top:8px">`;
+    keluar.forEach(({kr,i})=>{
+      html+=`<div class="li">
+        <div class="av" style="filter:grayscale(1);opacity:.7">${initials(kr.nama)}</div>
+        <div style="flex:1"><div class="wn">${kr.nama}</div>
+          <div class="ws">Terakhir kerja: <span style="color:var(--or);font-weight:700">${krLabelBulan(kr.keluar)}</span></div>
+        </div>
+        <div style="display:flex;gap:5px">
+          <button class="bsm bsm-o" onclick="krAktifkan('${k}',${i})" aria-label="Aktifkan kembali" title="Aktifkan kembali"><i class="ti ti-arrow-back-up" aria-hidden="true"></i></button>
+          <button class="bsm bsm-r" onclick="krHapusPermanen('${k}',${i})" aria-label="Hapus permanen" title="Hapus permanen"><i class="ti ti-trash" aria-hidden="true"></i></button>
+        </div>
+      </div>`;
+    });
+    html+=`</div></details>`;
+  }
+  document.getElementById('MC').innerHTML=html;
+}
+
+function krBukaStop(k,i){
+  const kr=KRX[k].arr[i]; if(!kr) return;
+  const nowYm=getNowYm();
+  let def=currentMonth; if(def<'2026-07'||def>nowYm) def=nowYm;
+  moCtx={type:'kr-stop',k,i};
+  document.getElementById('mo-title').textContent='Berhenti Bekerja — '+kr.nama;
+  document.getElementById('mo-body').innerHTML=`
+    <div class="fg2"><label>Bulan terakhir kerja</label>
+      <select class="fi2" id="kr-keluar">${buildMonthOptsAbsen(def)}</select></div>
+    <div style="font-size:11px;color:var(--tl);margin-top:2px;line-height:1.5">${kr.nama} tetap tampil di Absen, Lembur, dan Gaji sampai bulan ini. Mulai bulan berikutnya namanya tidak muncul lagi. Semua data lama tetap tersimpan.</div>`;
+  showMO();
+}
+function krSimpanStop(){
+  const mc=moCtx, X=KRX[mc.k], kr=X.arr[mc.i]; if(!kr) return;
+  const sel=document.getElementById('kr-keluar');
+  const ym=sel?sel.value:'';
+  if(!ym){ toast('❌ Pilih bulan terakhir kerja'); return; }
+  if(kr.mulai && ym<kr.mulai){ toast('❌ Bulan terakhir tidak boleh sebelum bulan mulai ('+krLabelBulan(kr.mulai)+')'); return; }
+  kr.keluar=ym;
+  hideMO(); X.render(); X.simpanKr();
+  toast('✅ '+kr.nama+' berhenti setelah '+krLabelBulan(ym));
+}
+function krAktifkan(k,i){
+  const X=KRX[k], kr=X.arr[i]; if(!kr) return;
+  if(!confirm('Aktifkan kembali '+kr.nama+'?\nNamanya akan muncul lagi di semua bulan.')) return;
+  delete kr.keluar;
+  X.render(); X.simpanKr();
+  toast('✅ '+kr.nama+' aktif kembali');
+}
+function krHapusPermanen(k,i){
+  const X=KRX[k], kr=X.arr[i]; if(!kr) return;
+  const keyA=Object.keys(X.absen||{}).filter(x=>krIdDariKunci(x)===kr.id);
+  const keyL=Object.keys(X.lembur||{}).filter(x=>krIdDariKunci(x)===kr.id);
+  const info = (keyA.length||keyL.length)
+    ? `\n\n${keyA.length} catatan absen dan ${keyL.length} catatan lembur milik ${kr.nama} di SEMUA bulan ikut terhapus, dan total gaji bulan-bulan lalu akan berubah.`
+    : `\n\n(Tidak ada data absen/lembur atas nama ini.)`;
+  if(!confirm('HAPUS PERMANEN '+kr.nama+'?'+info+'\n\nTidak bisa dibatalkan. Jika hanya berhenti bekerja, biarkan saja di daftar ini.')) return;
+  keyA.forEach(x=>delete X.absen[x]);
+  keyL.forEach(x=>delete X.lembur[x]);
+  X.arr.splice(i,1);
+  X.render(); X.simpanSemua();
+  toast('🗑️ '+kr.nama+' dihapus permanen');
+}
+
+// ══════════════════════════════════════════════════════════
+// ── RIWAYAT GAJI (terkunci per bulan) & BULAN MULAI KERJA ──
+// kr.gajiRiwayat = { '0000-00': gaji awal, 'YYYY-MM': gaji baru berlaku mulai bulan tsb }
+// Gaji suatu bulan = entri terakhir yang bulannya <= bulan itu → bulan lama tidak berubah.
+// kr.mulai = 'YYYY-MM' bulan pertama kerja (kosong = sejak awal).
+// Tarif lembur punya riwayat yang sama (lemburRateHist / lemburRateSGHist).
+// ══════════════════════════════════════════════════════════
+const KR_BULAN_AWAL = '2026-07';
+function krBulanSekarang(){ const n=getNowYm(); return n<KR_BULAN_AWAL ? KR_BULAN_AWAL : n; }
+function krBulanDepan(){ const p=krBulanSekarang().split('-').map(Number); return p[1]===12 ? (p[0]+1)+'-01' : p[0]+'-'+String(p[1]+1).padStart(2,'0'); }
+
+function rateDariRiwayat(hist, sekarang, ym){
+  let best=null;
+  Object.keys(hist||{}).forEach(k=>{ if(k<=ym && (best===null || k>best)) best=k; });
+  return best===null ? sekarang : hist[best];
+}
+function krGaji(kr, ym){ return rateDariRiwayat(kr.gajiRiwayat, kr.gaji, ym); }
+function rateLembur(ym){ return rateDariRiwayat(lemburRateHist, lemburRate, ym); }
+function rateLemburSG(ym){ return rateDariRiwayat(lemburRateSGHist, lemburRateSG, ym); }
+
+function krSetGaji(kr, gajiBaru, dariYm){
+  const h = kr.gajiRiwayat ? Object.assign({}, kr.gajiRiwayat) : {'0000-00': kr.gaji};
+  h[dariYm] = gajiBaru;
+  kr.gajiRiwayat = h;
+  kr.gaji = krGaji(kr, '9999-99');   // kr.gaji selalu = tarif terbaru
+}
+function krTeksRiwayat(kr){
+  if(!kr.gajiRiwayat) return '';
+  return Object.keys(kr.gajiRiwayat).sort().map(k=>(k==='0000-00'?'Awal':krLabelBulan(k))+': '+fmtRp(kr.gajiRiwayat[k])).join(' → ');
+}
+function krInfoNaik(kr){
+  if(!kr.gajiRiwayat) return '';
+  const now=krBulanSekarang();
+  const ks=Object.keys(kr.gajiRiwayat).filter(k=>k>now).sort();
+  return ks.length ? ' · '+fmtRp(kr.gajiRiwayat[ks[0]])+' mulai '+krLabelBulan(ks[0]) : '';
+}
+
+// Daftar <option> bulan dari Juli 2026 s/d maxYm
+function krOptBulan(def, maxYm, extra){
+  let o=(extra||[]).map(e=>`<option value="${e.v}"${e.v===def?' selected':''}>${e.t}</option>`).join('');
+  let y=2026, m=7;
+  for(;;){
+    const v=y+'-'+String(m).padStart(2,'0');
+    if(v>maxYm) break;
+    o+=`<option value="${v}"${v===def?' selected':''}>${monthN[m]} ${y}</option>`;
+    if(++m>12){ m=1; y++; }
+  }
+  return o;
+}
+
+// Form Tambah / Edit karyawan (dipakai Kebun & Sawah Gondang)
+function krBukaForm(k, mode, i){
+  const X=KRX[k];
+  const kr = mode==='edit' ? X.arr[i] : null;
+  if(mode==='edit' && !kr) return;
+  moCtx={type:'kr-form', k, mode, i};
+  const now=krBulanSekarang();
+  const hint = t=>`<div style="font-size:11px;color:var(--tl);margin:-4px 0 10px;line-height:1.5">${t}</div>`;
+  let body='';
+  if(mode==='add'){
+    document.getElementById('mo-title').textContent='Tambah Karyawan';
+    body=`<div class="fg2"><label>Nama</label><input class="fi2" type="text" id="kr-nm" placeholder="Nama lengkap"></div>
+      <div class="fg2"><label>Gaji Harian (Rp)</label><input class="fi2" type="number" id="kr-gj" placeholder="80000"></div>
+      <div class="fg2"><label>Tipe Gaji</label><select class="fi2" id="kr-tp"><option value="mingguan">Mingguan</option><option value="bulanan">Bulanan</option></select></div>
+      <div class="fg2"><label>Mulai kerja bulan</label><select class="fi2" id="kr-mulai">${krOptBulan(now, now)}</select></div>
+      ${hint('Nama ini hanya muncul mulai bulan tersebut. Bulan-bulan sebelumnya tidak ikut. Jika masuk di pertengahan bulan, pilih bulan berjalan.')}`;
+  } else {
+    document.getElementById('mo-title').textContent='Edit — '+kr.nama;
+    const rw=krTeksRiwayat(kr);
+    body=`<div class="fg2"><label>Gaji Harian (Rp)</label><input class="fi2" type="number" id="kr-gj" value="${krGaji(kr,now)}"></div>
+      <div class="fg2"><label>Gaji baru berlaku mulai bulan</label><select class="fi2" id="kr-berlaku">${krOptBulan(now, krBulanDepan(), [{v:'0000-00',t:'Semua bulan (koreksi salah input)'}])}</select></div>
+      ${hint('Hanya dipakai jika gaji diubah. Bulan-bulan sebelumnya tetap memakai gaji lama (terkunci).'+(rw?'<br><b>Riwayat gaji:</b> '+rw:''))}
+      <div class="fg2"><label>Tipe Gaji</label><select class="fi2" id="kr-tp">
+        <option value="mingguan" ${kr.tipe==='mingguan'?'selected':''}>Mingguan (Sabtu–Jumat)</option>
+        <option value="bulanan" ${kr.tipe==='bulanan'?'selected':''}>Bulanan</option></select></div>
+      <div class="fg2"><label>Mulai kerja bulan</label><select class="fi2" id="kr-mulai">${krOptBulan(kr.mulai||'', now, [{v:'',t:'Sejak awal (semua bulan)'}])}</select></div>`;
+  }
+  document.getElementById('mo-body').innerHTML=body;
+  showMO();
+}
+function krSimpanForm(){
+  const mc=moCtx, X=KRX[mc.k];
+  const tipe=document.getElementById('kr-tp').value;
+  const mulai=document.getElementById('kr-mulai').value;
+  const gajiIn=parseInt(document.getElementById('kr-gj').value);
+  if(mc.mode==='add'){
+    const nm=document.getElementById('kr-nm').value.trim();
+    if(!nm){ toast('❌ Nama wajib diisi'); return; }
+    const kr={id:newKrId(), nama:nm, gaji:gajiIn||0, tipe};
+    if(mulai) kr.mulai=mulai;
+    X.arr.push(kr);
+    hideMO(); X.render(); X.simpanKr();
+    toast('✅ '+nm+' ditambahkan, mulai '+krLabelBulan(mulai));
+    return;
+  }
+  const kr=X.arr[mc.i]; if(!kr) return;
+  if(mulai && kr.keluar && mulai>kr.keluar){ toast('❌ Bulan mulai melewati bulan terakhir kerja'); return; }
+  let info='✅ Karyawan diperbarui';
+  const berlaku=document.getElementById('kr-berlaku').value;
+  if(gajiIn>0 && gajiIn!==krGaji(kr,berlaku)){
+    krSetGaji(kr, gajiIn, berlaku);
+    info = berlaku==='0000-00' ? '✅ Gaji dikoreksi untuk semua bulan' : '✅ Gaji baru berlaku mulai '+krLabelBulan(berlaku);
+  }
+  kr.tipe=tipe;
+  if(mulai) kr.mulai=mulai; else delete kr.mulai;
+  hideMO(); X.render(); X.simpanKr(); toast(info);
+}
+function openEditKr(i){ krBukaForm('kebun','edit',i); }
+function openAddKr(){ krBukaForm('kebun','add'); }
+function openEditKrSG(i){ krBukaForm('sg','edit',i); }
+function openAddKrSG(){ krBukaForm('sg','add'); }
+
+// Tarif lembur per bulan
+function krFieldRateDari(){
+  return `<div class="fg2" style="margin-top:10px"><label>Tarif baru berlaku mulai bulan</label><select class="fi2" id="mo-rate-dari">${krOptBulan(krBulanSekarang(), krBulanDepan(), [{v:'0000-00',t:'Semua bulan (koreksi salah input)'}])}</select></div>
+    <div style="font-size:11px;color:var(--tl);margin-top:2px;line-height:1.5">Bulan-bulan sebelumnya tetap memakai tarif lama (terkunci).</div>`;
+}
+function krSetRateLembur(k){
+  const nr=parseInt(document.getElementById('mo-lembur-rate').value);
+  if(!nr||nr<0){ toast('❌ Tarif tidak valid'); return; }
+  const sel=document.getElementById('mo-rate-dari');
+  const dari=sel?sel.value:'0000-00';
+  if(k==='kebun'){
+    const h = Object.keys(lemburRateHist||{}).length ? Object.assign({},lemburRateHist) : {'0000-00':lemburRate};
+    h[dari]=nr; lemburRateHist=h; lemburRate=rateDariRiwayat(h,nr,'9999-99');
+    hideMO(); renderGaji(); saveLemburRate(); saveLemburRateHist();
+  } else {
+    const h = Object.keys(lemburRateSGHist||{}).length ? Object.assign({},lemburRateSGHist) : {'0000-00':lemburRateSG};
+    h[dari]=nr; lemburRateSGHist=h; lemburRateSG=rateDariRiwayat(h,nr,'9999-99');
+    hideMO(); renderGajiSG(); saveLemburRateSG(); saveLemburRateSGHist();
+  }
+  toast(dari==='0000-00' ? '✅ Tarif lembur dikoreksi untuk semua bulan' : '✅ Tarif lembur baru berlaku mulai '+krLabelBulan(dari));
 }
 
 // Mulai Firebase
@@ -771,6 +1097,7 @@ let panenData={1:{},2:{},3:{},4:{}};
 let karyawanSG=[];
 let absenDataSG={},lemburDataSG={};
 let lemburRateSG=10000;
+let lemburRateHist={}, lemburRateSGHist={};
 const KAS_LABEL = {rumah:'Kas Rumah', kebun:'Buku Harian', rumah_gondang:'Kas Rumah — Sawah Gondang', kebun_gondang:'Buku Harian — Sawah Gondang'};
 let bunga=['Mawar Merah','Mawar Pink','Melati','Sedap Malam','Krisan','Anggrek','Lily'];
 const dayN=['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
@@ -820,6 +1147,7 @@ function refreshPage() {
   if (navStack.length) {
     const top = navStack[navStack.length - 1];
     top.renderFn();
+    applyReadOnlyGuard();
   }
 }
 
@@ -1101,9 +1429,13 @@ function renderSawahGondangMenu() {
         <div class="mc-icon-wrap" style="background:#f5f3ff"><i class="ti ti-scissors" style="font-size:22px;color:#7C3AED" aria-hidden="true"></i></div>
         <div class="mc-label">Matun</div><div class="mc-sub">Penyiangan</div>
       </div>
-      <div class="menu-card green" onclick="navJTSG()" style="grid-column:1/-1">
+      <div class="menu-card green" onclick="navJTSG()">
         <div class="mc-icon-wrap" style="background:#edf7f1"><i class="ti ti-trees" style="font-size:22px;color:#1a6b3c" aria-hidden="true"></i></div>
         <div class="mc-label">Jumlah Tanaman</div><div class="mc-sub">Blok A, B, C, D1, D2, D3</div>
+      </div>
+      <div class="menu-card gold" onclick="navPUVSG()" style="grid-column:1/-1">
+        <div class="mc-icon-wrap" style="background:#fefce8"><i class="ti ti-layout-rows" style="font-size:22px;color:#b8820f" aria-hidden="true"></i></div>
+        <div class="mc-label">Plastik UV</div><div class="mc-sub">Tabel bedeng & tanggal</div>
       </div>
     </div>`;
 }
@@ -1155,7 +1487,7 @@ function renderAbsenMenu() {
       </div>
       <div class="menu-card purple" onclick="pushNav({title:'Data Karyawan',sub:'Kelola karyawan',renderFn:renderKaryawan,showBack:true})" style="grid-column:1/-1">
         <div class="mc-icon-wrap" style="background:#f5f3ff"><i class="ti ti-users" style="font-size:22px;color:#7C3AED" aria-hidden="true"></i></div>
-        <div class="mc-label">Data Karyawan</div><div class="mc-sub">Tambah, edit & hapus</div>
+        <div class="mc-label">Data Karyawan</div><div class="mc-sub">Tambah, edit & berhenti kerja</div>
       </div>
     </div>`;
 }
@@ -1394,11 +1726,11 @@ function renderAbsensi() {
   <div class="tbl-wrap"><table><thead><tr><th class="td-sticky">Nama</th>`;
   days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
   html+=`<th>Jam</th></tr></thead><tbody>`;
-  karyawan.forEach((kr,ki)=>{
+  karyawan.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
     let tot=0;
     html+=`<tr><td class="td-sticky" onclick="openAbsenBatch(${ki})" style="cursor:pointer">${kr.nama}</td>`;
     days.forEach(({d,day})=>{
-      const k=`${currentMonth}-${ki}-${d}`;
+      const k=`${currentMonth}-${karyawan[ki].id}-${d}`;
       const v=(absenData[k]||'').toUpperCase();
       const we=day===0||day===6;
       let st=we?'background:#fdf8f5;':'';
@@ -1410,6 +1742,7 @@ function renderAbsensi() {
   });
   html+=`</tbody></table></div>`;
   document.getElementById('MC').innerHTML=html;
+  applyReadOnlyGuard();
 }
 
 // Build month <option> list (2 yr back to 1 yr forward), selected = cur
@@ -1471,7 +1804,7 @@ function openAbsenBatch(ki=-1){
   const [y,m]=currentMonth.split('-').map(Number);
   const krOpts=ki>=0
     ?`<div class="info-row"><span style="color:var(--tl)">Karyawan</span><span class="info-val">${karyawan[ki].nama}</span></div>`
-    :`<div class="fg2"><label>Karyawan</label><select class="fi2" id="mo-kr">${karyawan.map((k,i)=>`<option value="${i}">${k.nama}</option>`).join('')}</select></div>`;
+    :`<div class="fg2"><label>Karyawan</label><select class="fi2" id="mo-kr">${karyawan.map((k,i)=>krAktif(k,currentMonth)?`<option value="${i}">${k.nama}</option>`:'').join('')}</select></div>`;
   moCtx={type:'absen-batch',ki};
   const todayD=new Date().getDate();
   const mm=String(m).padStart(2,'0');
@@ -1509,11 +1842,11 @@ function renderLembur(){
   <div class="tbl-wrap"><table><thead><tr><th class="td-sticky">Nama</th>`;
   days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
   html+=`<th>Total</th></tr></thead><tbody>`;
-  karyawan.forEach((kr,ki)=>{
+  karyawan.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
     let tot=0;
     html+=`<tr><td class="td-sticky" onclick="openLemburBatch(${ki})" style="cursor:pointer">${kr.nama}</td>`;
     days.forEach(({d,day})=>{
-      const k=`L-${currentMonth}-${ki}-${d}`;const v=lemburData[k]||'';if(v)tot+=parseInt(v)||0;
+      const k=`L-${currentMonth}-${karyawan[ki].id}-${d}`;const v=lemburData[k]||'';if(v)tot+=parseInt(v)||0;
       const we=day===0||day===6;
       html+=`<td style="${we?'background:#fdf8f5':''}cursor:pointer;${v?'color:var(--or);font-weight:700':''}" onclick="openLemburModal(${ki},${d},'${k}')">${v||''}</td>`;
     });
@@ -1545,7 +1878,7 @@ function openLemburBatch(ki=-1){
   const [y,m]=currentMonth.split('-').map(Number);
   const krOpts=ki>=0
     ?`<div class="info-row"><span style="color:var(--tl)">Karyawan</span><span class="info-val">${karyawan[ki].nama}</span></div>`
-    :`<div class="fg2"><label>Karyawan</label><select class="fi2" id="mo-kr-l">${karyawan.map((k,i)=>`<option value="${i}">${k.nama}</option>`).join('')}</select></div>`;
+    :`<div class="fg2"><label>Karyawan</label><select class="fi2" id="mo-kr-l">${karyawan.map((k,i)=>krAktif(k,currentMonth)?`<option value="${i}">${k.nama}</option>`:'').join('')}</select></div>`;
   moCtx={type:'lembur-batch',ki};
   const todayD=new Date().getDate();
   const mm=String(m).padStart(2,'0');
@@ -1660,12 +1993,12 @@ function renderRekap(){
 
   // Baris per karyawan
   let bodyHtml='';
-  karyawan.forEach((kr,ki)=>{
+  karyawan.forEach((kr,ki)=>{if(!krAktifRentang(kr,hariList[0].ym,hariList[hariList.length-1].ym))return;
     let totJ=0;
     const cells=hariList.map(({ym,d,dayOfWeek})=>{
       const isWe=dayOfWeek===0||dayOfWeek===6;
       const bg=isWe?'background:#fdf8f5':'';
-      const v=(absenData[`${ym}-${ki}-${d}`]||'').toUpperCase();
+      const v=(absenData[`${ym}-${karyawan[ki].id}-${d}`]||'').toUpperCase();
       let tampil='';
       if(v&&absenColors[v]){
         const bm={I:'b-or',S:'b-bl',A:'b-rd',B:'b-gr'};
@@ -1723,10 +2056,10 @@ function printRekapJawa(){
   const thMas=hariList.map(({masehi,d})=>`<th>${d}/${masehi.month}</th>`).join('');
   const thJw=hariList.map(({tglJawa})=>`<th>${tglJawa}</th>`).join('');
   let tBody='';
-  karyawan.forEach((kr,ki)=>{
+  karyawan.forEach((kr,ki)=>{if(!krAktifRentang(kr,hariList[0].ym,hariList[hariList.length-1].ym))return;
     let totJ=0;
     const cells=hariList.map(({ym,d})=>{
-      const v=(absenData[`${ym}-${ki}-${d}`]||'').toUpperCase();
+      const v=(absenData[`${ym}-${karyawan[ki].id}-${d}`]||'').toUpperCase();
       if(v&&!absenColors[v])totJ+=parseTime(v);
       return `<td class="c">${v||'–'}</td>`;
     }).join('');
@@ -1754,17 +2087,17 @@ function renderGaji(){
   </div>`;
 
   // Build per-karyawan data: { gP per week, gL per week, total }
-  const krData = karyawan.map((kr,ki)=>{
+  const krData = karyawan.map((kr,ki)=>({kr,ki})).filter(({kr})=>krAktif(kr,currentMonth)).map(({kr,ki})=>{
     let totalGaji=0, totalLem=0;
     const weeks = wks.map((wk,wi)=>{
       let tM=0,tL=0;
       wk.forEach(d=>{
-        const v=(absenData[`${currentMonth}-${ki}-${d}`]||'').toUpperCase();
+        const v=(absenData[`${currentMonth}-${karyawan[ki].id}-${d}`]||'').toUpperCase();
         if(v&&!absenColors[v])tM+=parseTime(v);
-        tL+=parseInt(lemburData[`L-${currentMonth}-${ki}-${d}`]||0);
+        tL+=parseInt(lemburData[`L-${currentMonth}-${karyawan[ki].id}-${d}`]||0);
       });
-      const gP=Math.round(kr.gaji*(tM/480));
-      const gL=Math.round(tL*(lemburRate/60));
+      const gP=Math.round(krGaji(kr,currentMonth)*(tM/480));
+      const gL=Math.round(tL*(rateLembur(currentMonth)/60));
       totalGaji+=gP+gL; totalLem+=tL;
       return {tM,tL,gP,gL,tot:gP+gL};
     });
@@ -1816,7 +2149,7 @@ function renderGaji(){
     </table>
     </div>
     <div style="padding:10px 14px;font-size:11px;color:var(--tl);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <span>*Lembur = Rp${lemburRate.toLocaleString('id-ID')}/jam · Gaji pokok = (jam/8jam)×gaji harian</span>
+      <span>*Lembur = Rp${rateLembur(currentMonth).toLocaleString('id-ID')}/jam · Gaji pokok = (jam/8jam)×gaji harian</span>
       <button onclick="openLemburRateEdit()" style="background:var(--orp);border:1px solid var(--orm);color:var(--or);padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:'Plus Jakarta Sans',sans-serif"><i class="ti ti-settings" aria-hidden="true"></i> Atur Tarif</button>
     </div>
   </div>`;
@@ -1829,51 +2162,13 @@ function openLemburRateEdit(){
   document.getElementById('mo-body').innerHTML=`
     <div class="fg2">
       <label>Tarif Lembur (Rp / jam)</label>
-      <input class="fi2" type="number" id="mo-lembur-rate" value="${lemburRate}" placeholder="10000">
+      <input class="fi2" type="number" id="mo-lembur-rate" value="${rateLembur(krBulanSekarang())}" placeholder="10000">
     </div>
-    <div style="font-size:11px;color:var(--tl);margin-top:2px">Berlaku untuk semua perhitungan gaji lembur karyawan.</div>`;
+    ${krFieldRateDari()}`;
   showMO();
 }
 
-function renderKaryawan(){
-  let html=`<div style="display:flex;justify-content:flex-end;margin-bottom:12px">
-    <button class="btn-save" style="padding:9px 16px;font-size:13px;border:none;cursor:pointer" onclick="openAddKr()"><i class="ti ti-plus" aria-hidden="true"></i> Tambah</button>
-  </div><div class="cd">`;
-  karyawan.forEach((kr,i)=>{
-    html+=`<div class="li">
-      <div class="av">${initials(kr.nama)}</div>
-      <div style="flex:1"><div class="wn">${kr.nama}</div>
-        <div class="ws">${fmtRp(kr.gaji)}/hari · <span style="color:var(--or);font-weight:700">${kr.tipe}</span></div>
-      </div>
-      <div style="display:flex;gap:5px">
-        <button class="bsm bsm-o" onclick="openEditKr(${i})" aria-label="Edit"><i class="ti ti-edit" aria-hidden="true"></i></button>
-        <button class="bsm bsm-r" onclick="delKr(${i})" aria-label="Hapus"><i class="ti ti-trash" aria-hidden="true"></i></button>
-      </div>
-    </div>`;
-  });
-  html+=`</div>`;document.getElementById('MC').innerHTML=html;
-}
-function openEditKr(i){
-  moCtx={type:'kr-edit',ki:i};
-  document.getElementById('mo-title').textContent='Edit — '+karyawan[i].nama;
-  document.getElementById('mo-body').innerHTML=`
-    <div class="fg2"><label>Gaji Harian (Rp)</label><input class="fi2" type="number" id="ed-gaji" value="${karyawan[i].gaji}"></div>
-    <div class="fg2"><label>Tipe Gaji</label><select class="fi2" id="ed-tipe">
-      <option value="mingguan" ${karyawan[i].tipe==='mingguan'?'selected':''}>Mingguan (Sabtu–Jumat)</option>
-      <option value="bulanan" ${karyawan[i].tipe==='bulanan'?'selected':''}>Bulanan</option></select></div>`;
-  showMO();
-}
-function openAddKr(){
-  moCtx={type:'kr-add'};
-  document.getElementById('mo-title').textContent='Tambah Karyawan';
-  document.getElementById('mo-body').innerHTML=`
-    <div class="fg2"><label>Nama</label><input class="fi2" type="text" id="kr-nm" placeholder="Nama lengkap"></div>
-    <div class="fg2"><label>Gaji Harian (Rp)</label><input class="fi2" type="number" id="kr-gj" placeholder="80000"></div>
-    <div class="fg2"><label>Tipe Gaji</label><select class="fi2" id="kr-tp">
-      <option value="mingguan">Mingguan</option><option value="bulanan">Bulanan</option></select></div>`;
-  showMO();
-}
-function delKr(i){if(!confirm('Hapus '+karyawan[i].nama+'?'))return;karyawan.splice(i,1);renderKaryawan();saveKaryawan();toast('Karyawan dihapus');}
+function renderKaryawan(){ renderDaftarKr('kebun'); }
 
 // ══════════════════════════════════════════════════════════
 // ── ABSEN SAWAH GONDANG (data terpisah, duplikat modul Absen) ──
@@ -1900,7 +2195,7 @@ function renderAbsenMenuSG() {
       </div>
       <div class="menu-card purple" onclick="pushNav({title:'Data Karyawan — Sawah Gondang',sub:'Kelola karyawan',renderFn:renderKaryawanSG,showBack:true})" style="grid-column:1/-1">
         <div class="mc-icon-wrap" style="background:#f5f3ff"><i class="ti ti-users" style="font-size:22px;color:#7C3AED" aria-hidden="true"></i></div>
-        <div class="mc-label">Data Karyawan</div><div class="mc-sub">Tambah, edit & hapus</div>
+        <div class="mc-label">Data Karyawan</div><div class="mc-sub">Tambah, edit & berhenti kerja</div>
       </div>
     </div>`;
 }
@@ -1926,11 +2221,11 @@ function renderAbsensiSG() {
   <div class="tbl-wrap"><table><thead><tr><th class="td-sticky">Nama</th>`;
   days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
   html+=`<th>Jam</th></tr></thead><tbody>`;
-  karyawanSG.forEach((kr,ki)=>{
+  karyawanSG.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
     let tot=0;
     html+=`<tr><td class="td-sticky" onclick="openAbsenBatchSG(${ki})" style="cursor:pointer">${kr.nama}</td>`;
     days.forEach(({d,day})=>{
-      const k=`${currentMonth}-${ki}-${d}`;
+      const k=`${currentMonth}-${karyawanSG[ki].id}-${d}`;
       const v=(absenDataSG[k]||'').toUpperCase();
       const we=day===0||day===6;
       let st=we?'background:#fdf8f5;':'';
@@ -1981,7 +2276,7 @@ function openAbsenBatchSG(ki=-1){
   const [y,m]=currentMonth.split('-').map(Number);
   const krOpts=ki>=0
     ?`<div class="info-row"><span style="color:var(--tl)">Karyawan</span><span class="info-val">${karyawanSG[ki].nama}</span></div>`
-    :`<div class="fg2"><label>Karyawan</label><select class="fi2" id="mo-kr">${karyawanSG.map((k,i)=>`<option value="${i}">${k.nama}</option>`).join('')}</select></div>`;
+    :`<div class="fg2"><label>Karyawan</label><select class="fi2" id="mo-kr">${karyawanSG.map((k,i)=>krAktif(k,currentMonth)?`<option value="${i}">${k.nama}</option>`:'').join('')}</select></div>`;
   moCtx={type:'absen-batch-sg',ki};
   const todayD=new Date().getDate();
   const mm=String(m).padStart(2,'0');
@@ -2019,11 +2314,11 @@ function renderLemburSG(){
   <div class="tbl-wrap"><table><thead><tr><th class="td-sticky">Nama</th>`;
   days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
   html+=`<th>Total</th></tr></thead><tbody>`;
-  karyawanSG.forEach((kr,ki)=>{
+  karyawanSG.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
     let tot=0;
     html+=`<tr><td class="td-sticky" onclick="openLemburBatchSG(${ki})" style="cursor:pointer">${kr.nama}</td>`;
     days.forEach(({d,day})=>{
-      const k=`L-${currentMonth}-${ki}-${d}`;const v=lemburDataSG[k]||'';if(v)tot+=parseInt(v)||0;
+      const k=`L-${currentMonth}-${karyawanSG[ki].id}-${d}`;const v=lemburDataSG[k]||'';if(v)tot+=parseInt(v)||0;
       const we=day===0||day===6;
       html+=`<td style="${we?'background:#fdf8f5':''}cursor:pointer;${v?'color:var(--or);font-weight:700':''}" onclick="openLemburModalSG(${ki},${d},'${k}')">${v||''}</td>`;
     });
@@ -2055,7 +2350,7 @@ function openLemburBatchSG(ki=-1){
   const [y,m]=currentMonth.split('-').map(Number);
   const krOpts=ki>=0
     ?`<div class="info-row"><span style="color:var(--tl)">Karyawan</span><span class="info-val">${karyawanSG[ki].nama}</span></div>`
-    :`<div class="fg2"><label>Karyawan</label><select class="fi2" id="mo-kr-l">${karyawanSG.map((k,i)=>`<option value="${i}">${k.nama}</option>`).join('')}</select></div>`;
+    :`<div class="fg2"><label>Karyawan</label><select class="fi2" id="mo-kr-l">${karyawanSG.map((k,i)=>krAktif(k,currentMonth)?`<option value="${i}">${k.nama}</option>`:'').join('')}</select></div>`;
   moCtx={type:'lembur-batch-sg',ki};
   const todayD=new Date().getDate();
   const mm=String(m).padStart(2,'0');
@@ -2111,12 +2406,12 @@ function renderRekapSG(){
 
   // Baris per karyawanSG
   let bodyHtml='';
-  karyawanSG.forEach((kr,ki)=>{
+  karyawanSG.forEach((kr,ki)=>{if(!krAktifRentang(kr,hariList[0].ym,hariList[hariList.length-1].ym))return;
     let totJ=0;
     const cells=hariList.map(({ym,d,dayOfWeek})=>{
       const isWe=dayOfWeek===0||dayOfWeek===6;
       const bg=isWe?'background:#fdf8f5':'';
-      const v=(absenDataSG[`${ym}-${ki}-${d}`]||'').toUpperCase();
+      const v=(absenDataSG[`${ym}-${karyawanSG[ki].id}-${d}`]||'').toUpperCase();
       let tampil='';
       if(v&&absenColors[v]){
         const bm={I:'b-or',S:'b-bl',A:'b-rd',B:'b-gr'};
@@ -2174,10 +2469,10 @@ function printRekapJawaSG(){
   const thMas=hariList.map(({masehi,d})=>`<th>${d}/${masehi.month}</th>`).join('');
   const thJw=hariList.map(({tglJawa})=>`<th>${tglJawa}</th>`).join('');
   let tBody='';
-  karyawanSG.forEach((kr,ki)=>{
+  karyawanSG.forEach((kr,ki)=>{if(!krAktifRentang(kr,hariList[0].ym,hariList[hariList.length-1].ym))return;
     let totJ=0;
     const cells=hariList.map(({ym,d})=>{
-      const v=(absenDataSG[`${ym}-${ki}-${d}`]||'').toUpperCase();
+      const v=(absenDataSG[`${ym}-${karyawanSG[ki].id}-${d}`]||'').toUpperCase();
       if(v&&!absenColors[v])totJ+=parseTime(v);
       return `<td class="c">${v||'–'}</td>`;
     }).join('');
@@ -2206,17 +2501,17 @@ function renderGajiSG(){
   </div>`;
 
   // Build per-karyawanSG data: { gP per week, gL per week, total }
-  const krData = karyawanSG.map((kr,ki)=>{
+  const krData = karyawanSG.map((kr,ki)=>({kr,ki})).filter(({kr})=>krAktif(kr,currentMonth)).map(({kr,ki})=>{
     let totalGaji=0, totalLem=0;
     const weeks = wks.map((wk,wi)=>{
       let tM=0,tL=0;
       wk.forEach(d=>{
-        const v=(absenDataSG[`${currentMonth}-${ki}-${d}`]||'').toUpperCase();
+        const v=(absenDataSG[`${currentMonth}-${karyawanSG[ki].id}-${d}`]||'').toUpperCase();
         if(v&&!absenColors[v])tM+=parseTime(v);
-        tL+=parseInt(lemburDataSG[`L-${currentMonth}-${ki}-${d}`]||0);
+        tL+=parseInt(lemburDataSG[`L-${currentMonth}-${karyawanSG[ki].id}-${d}`]||0);
       });
-      const gP=Math.round(kr.gaji*(tM/480));
-      const gL=Math.round(tL*(lemburRateSG/60));
+      const gP=Math.round(krGaji(kr,currentMonth)*(tM/480));
+      const gL=Math.round(tL*(rateLemburSG(currentMonth)/60));
       totalGaji+=gP+gL; totalLem+=tL;
       return {tM,tL,gP,gL,tot:gP+gL};
     });
@@ -2268,7 +2563,7 @@ function renderGajiSG(){
     </table>
     </div>
     <div style="padding:10px 14px;font-size:11px;color:var(--tl);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <span>*Lembur = Rp${lemburRateSG.toLocaleString('id-ID')}/jam · Gaji pokok = (jam/8jam)×gaji harian</span>
+      <span>*Lembur = Rp${rateLemburSG(currentMonth).toLocaleString('id-ID')}/jam · Gaji pokok = (jam/8jam)×gaji harian</span>
       <button onclick="openLemburRateEditSG()" style="background:var(--orp);border:1px solid var(--orm);color:var(--or);padding:5px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:'Plus Jakarta Sans',sans-serif"><i class="ti ti-settings" aria-hidden="true"></i> Atur Tarif</button>
     </div>
   </div>`;
@@ -2281,52 +2576,13 @@ function openLemburRateEditSG(){
   document.getElementById('mo-body').innerHTML=`
     <div class="fg2">
       <label>Tarif Lembur (Rp / jam)</label>
-      <input class="fi2" type="number" id="mo-lembur-rate" value="${lemburRateSG}" placeholder="10000">
+      <input class="fi2" type="number" id="mo-lembur-rate" value="${rateLemburSG(krBulanSekarang())}" placeholder="10000">
     </div>
-    <div style="font-size:11px;color:var(--tl);margin-top:2px">Berlaku untuk semua perhitungan gaji lembur karyawanSG.</div>`;
+    ${krFieldRateDari()}`;
   showMO();
 }
 
-function renderKaryawanSG(){
-  CURRENT_LOC = 4;
-  let html=`<div style="display:flex;justify-content:flex-end;margin-bottom:12px">
-    <button class="btn-save" style="padding:9px 16px;font-size:13px;border:none;cursor:pointer" onclick="openAddKrSG()"><i class="ti ti-plus" aria-hidden="true"></i> Tambah</button>
-  </div><div class="cd">`;
-  karyawanSG.forEach((kr,i)=>{
-    html+=`<div class="li">
-      <div class="av">${initials(kr.nama)}</div>
-      <div style="flex:1"><div class="wn">${kr.nama}</div>
-        <div class="ws">${fmtRp(kr.gaji)}/hari · <span style="color:var(--or);font-weight:700">${kr.tipe}</span></div>
-      </div>
-      <div style="display:flex;gap:5px">
-        <button class="bsm bsm-o" onclick="openEditKrSG(${i})" aria-label="Edit"><i class="ti ti-edit" aria-hidden="true"></i></button>
-        <button class="bsm bsm-r" onclick="delKrSG(${i})" aria-label="Hapus"><i class="ti ti-trash" aria-hidden="true"></i></button>
-      </div>
-    </div>`;
-  });
-  html+=`</div>`;document.getElementById('MC').innerHTML=html;
-}
-function openEditKrSG(i){
-  moCtx={type:'kr-edit-sg',ki:i};
-  document.getElementById('mo-title').textContent='Edit — '+karyawanSG[i].nama;
-  document.getElementById('mo-body').innerHTML=`
-    <div class="fg2"><label>Gaji Harian (Rp)</label><input class="fi2" type="number" id="ed-gaji" value="${karyawanSG[i].gaji}"></div>
-    <div class="fg2"><label>Tipe Gaji</label><select class="fi2" id="ed-tipe">
-      <option value="mingguan" ${karyawanSG[i].tipe==='mingguan'?'selected':''}>Mingguan (Sabtu–Jumat)</option>
-      <option value="bulanan" ${karyawanSG[i].tipe==='bulanan'?'selected':''}>Bulanan</option></select></div>`;
-  showMO();
-}
-function openAddKrSG(){
-  moCtx={type:'kr-add-sg'};
-  document.getElementById('mo-title').textContent='Tambah Karyawan';
-  document.getElementById('mo-body').innerHTML=`
-    <div class="fg2"><label>Nama</label><input class="fi2" type="text" id="kr-nm" placeholder="Nama lengkap"></div>
-    <div class="fg2"><label>Gaji Harian (Rp)</label><input class="fi2" type="number" id="kr-gj" placeholder="80000"></div>
-    <div class="fg2"><label>Tipe Gaji</label><select class="fi2" id="kr-tp">
-      <option value="mingguan">Mingguan</option><option value="bulanan">Bulanan</option></select></div>`;
-  showMO();
-}
-function delKrSG(i){if(!confirm('Hapus '+karyawanSG[i].nama+'?'))return;karyawanSG.splice(i,1);renderKaryawanSG();saveKaryawanSG();toast('Karyawan dihapus');}
+function renderKaryawanSG(){ renderDaftarKr('sg'); }
 
 // ── PANEN ─────────────────────────────────────────────────
 function renderPanen(t){
@@ -2354,6 +2610,7 @@ function renderPanen(t){
     html+=`<td style="font-weight:700;color:var(--or)">${tot||''}</td><td style="${rk?'color:#c0392b':''}">${rk||''}</td></tr>`;
   });
   html+=`</tbody></table></div>`;document.getElementById('MC').innerHTML=html;
+  applyReadOnlyGuard();
 }
 function openPanenMO(t,d){
   const days=getDays(currentMonth);const[y,m]=currentMonth.split('-').map(Number);
@@ -2519,6 +2776,7 @@ function renderKas(tp){
     </div>`;
   });
   html+=`</div>`;document.getElementById('MC').innerHTML=html;
+  applyReadOnlyGuard();
 }
 function openKasMO(tp,idx){
   const isEdit=idx>=0;
@@ -2577,6 +2835,7 @@ function renderObat(t){
     </div>`;
   });
   document.getElementById('MC').innerHTML=html;
+  applyReadOnlyGuard();
 }
 
 function openObatMO(t){
@@ -2658,6 +2917,7 @@ function renderDrip(t){
     </div>`;
   });
   document.getElementById('MC').innerHTML=html;
+  applyReadOnlyGuard();
 }
 
 function openDripMO(t){
@@ -3087,6 +3347,7 @@ function renderMatun(t) {
 
   html+=`</tbody></table></div>`;
   document.getElementById('MC').innerHTML=html;
+  applyReadOnlyGuard();
 }
 
 // ── MODAL INPUT MATUN ─────────────────────────────────────
@@ -3186,6 +3447,8 @@ function closeMO(e){if(e.target===document.getElementById('MO'))hideMO();}
 function saveMO(){
   if(CURRENT_LOC!=null && !canEditLoc(CURRENT_LOC)){ hideMO(); toast('🔒 Anda hanya punya akses lihat di sini'); return; }
   const mc=moCtx;
+  if(mc.type==='kr-stop'){ krSimpanStop(); return; }
+  if(mc.type==='kr-form'){ krSimpanForm(); return; }
   if(mc.type==='absen'){
     const j=document.getElementById('mo-jenis').value;
     const jam=document.getElementById('mo-jam')?document.getElementById('mo-jam').value:'';
@@ -3197,7 +3460,7 @@ function saveMO(){
     if(!d){toast('❌ Pilih tanggal dulu');return;}
     const j=document.getElementById('mo-jenis2').value;
     const jam=document.getElementById('mo-jam2')?document.getElementById('mo-jam2').value:'';
-    absenData[`${currentMonth}-${ki}-${d}`]=j==='jam'?jam:j;hideMO();renderAbsensi();saveAbsen();toast('✅ Absen disimpan');
+    absenData[`${currentMonth}-${karyawan[ki].id}-${d}`]=j==='jam'?jam:j;hideMO();renderAbsensi();saveAbsen();toast('✅ Absen disimpan');
   } else if(mc.type==='lembur'){
     lemburData[mc.key]=document.getElementById('mo-lem').value;hideMO();renderLembur();saveLembur();toast('✅ Lembur disimpan');
   } else if(mc.type==='lembur-batch'){
@@ -3205,11 +3468,11 @@ function saveMO(){
     const tglVal=document.getElementById('mo-tgl-l').value;
     const d=tglVal?parseInt(tglVal.split('-')[2]):0;
     if(!d){toast('❌ Pilih tanggal dulu');return;}
-    lemburData[`L-${currentMonth}-${ki}-${d}`]=document.getElementById('mo-lem-b').value;hideMO();renderLembur();saveLembur();toast('✅ Lembur disimpan');
+    lemburData[`L-${currentMonth}-${karyawan[ki].id}-${d}`]=document.getElementById('mo-lem-b').value;hideMO();renderLembur();saveLembur();toast('✅ Lembur disimpan');
   } else if(mc.type==='lembur-rate'){
     const nr=parseInt(document.getElementById('mo-lembur-rate').value);
     if(!nr||nr<0){toast('❌ Tarif tidak valid');return;}
-    lemburRate=nr;hideMO();renderGaji();saveLemburRate();toast('✅ Tarif lembur diperbarui');
+    krSetRateLembur('kebun');
   } else if(mc.type==='absen-sg'){
     const j=document.getElementById('mo-jenis').value;
     const jam=document.getElementById('mo-jam')?document.getElementById('mo-jam').value:'';
@@ -3221,7 +3484,7 @@ function saveMO(){
     if(!d){toast('❌ Pilih tanggal dulu');return;}
     const j=document.getElementById('mo-jenis2').value;
     const jam=document.getElementById('mo-jam2')?document.getElementById('mo-jam2').value:'';
-    absenDataSG[`${currentMonth}-${ki}-${d}`]=j==='jam'?jam:j;hideMO();renderAbsensiSG();saveAbsenSG();toast('✅ Absen disimpan');
+    absenDataSG[`${currentMonth}-${karyawanSG[ki].id}-${d}`]=j==='jam'?jam:j;hideMO();renderAbsensiSG();saveAbsenSG();toast('✅ Absen disimpan');
   } else if(mc.type==='lembur-sg'){
     lemburDataSG[mc.key]=document.getElementById('mo-lem').value;hideMO();renderLemburSG();saveLemburSG();toast('✅ Lembur disimpan');
   } else if(mc.type==='lembur-batch-sg'){
@@ -3229,18 +3492,11 @@ function saveMO(){
     const tglVal=document.getElementById('mo-tgl-l').value;
     const d=tglVal?parseInt(tglVal.split('-')[2]):0;
     if(!d){toast('❌ Pilih tanggal dulu');return;}
-    lemburDataSG[`L-${currentMonth}-${ki}-${d}`]=document.getElementById('mo-lem-b').value;hideMO();renderLemburSG();saveLemburSG();toast('✅ Lembur disimpan');
+    lemburDataSG[`L-${currentMonth}-${karyawanSG[ki].id}-${d}`]=document.getElementById('mo-lem-b').value;hideMO();renderLemburSG();saveLemburSG();toast('✅ Lembur disimpan');
   } else if(mc.type==='lembur-rate-sg'){
     const nr=parseInt(document.getElementById('mo-lembur-rate').value);
     if(!nr||nr<0){toast('❌ Tarif tidak valid');return;}
-    lemburRateSG=nr;hideMO();renderGajiSG();saveLemburRateSG();toast('✅ Tarif lembur diperbarui');
-  } else if(mc.type==='kr-edit-sg'){
-    karyawanSG[mc.ki].gaji=parseInt(document.getElementById('ed-gaji').value)||karyawanSG[mc.ki].gaji;
-    karyawanSG[mc.ki].tipe=document.getElementById('ed-tipe').value;hideMO();renderKaryawanSG();saveKaryawanSG();toast('✅ Karyawan diperbarui');
-  } else if(mc.type==='kr-add-sg'){
-    const nm=document.getElementById('kr-nm').value.trim();if(!nm){toast('❌ Nama wajib diisi');return;}
-    karyawanSG.push({nama:nm,gaji:parseInt(document.getElementById('kr-gj').value)||0,tipe:document.getElementById('kr-tp').value});
-    hideMO();renderKaryawanSG();saveKaryawanSG();toast('✅ Karyawan ditambahkan');
+    krSetRateLembur('sg');
   } else if(mc.type==='panen'){
     const tglVal=document.getElementById('pn-tgl').value;
     const d=tglVal?parseInt(tglVal.split('-')[2]):moCtx.d;
@@ -3314,13 +3570,6 @@ function saveMO(){
     if(pek)  matunData[t][kP]=pek;  else delete matunData[t][kP];
     if(ket)  matunData[t][kK]=ket;  else delete matunData[t][kK];
     hideMO();renderMatun(t);saveMatun();toast('✅ Data matun disimpan');
-  } else if(mc.type==='kr-edit'){
-    karyawan[mc.ki].gaji=parseInt(document.getElementById('ed-gaji').value)||karyawan[mc.ki].gaji;
-    karyawan[mc.ki].tipe=document.getElementById('ed-tipe').value;hideMO();renderKaryawan();saveKaryawan();toast('✅ Karyawan diperbarui');
-  } else if(mc.type==='kr-add'){
-    const nm=document.getElementById('kr-nm').value.trim();if(!nm){toast('❌ Nama wajib diisi');return;}
-    karyawan.push({nama:nm,gaji:parseInt(document.getElementById('kr-gj').value)||0,tipe:document.getElementById('kr-tp').value});
-    hideMO();renderKaryawan();saveKaryawan();toast('✅ Karyawan ditambahkan');
   } else if(mc.type==='jt-tambah'){
     const lok=mc.lok;
     const blk=document.getElementById('jt-blk-sel').value;
@@ -3459,11 +3708,11 @@ function printAbsensi() {
 
   const STATUS_CLR={I:'#1D4ED8',S:'#15803D',A:'#c0392b',B:'#9333EA'};
   let tBody='';
-  karyawan.forEach((kr,ki)=>{
+  karyawan.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
     let tot=0;
     let row=`<tr><td>${kr.nama}</td>`;
     days.forEach(({d,day})=>{
-      const k=`${currentMonth}-${ki}-${d}`;
+      const k=`${currentMonth}-${karyawan[ki].id}-${d}`;
       const v=(absenData[k]||'').toUpperCase();
       const we=day===0||day===6;
       let bg=we?'background:#f5f5f5;':'';
@@ -3477,10 +3726,10 @@ function printAbsensi() {
   });
 
   const html = PX.open(`Absensi ${mn} ${y}`)
-    + PX.header(`Absensi Karyawan — ${mn} ${y}`, `Bulan: ${mn} ${y} · Total Karyawan: ${karyawan.length}`)
+    + PX.header(`Absensi Karyawan — ${mn} ${y}`, `Bulan: ${mn} ${y} · Total Karyawan: ${krJumlahAktif(karyawan,currentMonth)}`)
     + `<div class="summary">
         <span>Bulan: <strong>${mn} ${y}</strong></span>
-        <span>Karyawan: <strong>${karyawan.length} orang</strong></span>
+        <span>Karyawan: <strong>${krJumlahAktif(karyawan,currentMonth)} orang</strong></span>
         <span>I=Ijin · S=Sakit · A=Tanpa Ket · B=Diliburkan</span>
       </div>
       <table style="font-size:8px"><thead>${tHead}</thead><tbody>${tBody}</tbody></table>`
@@ -3496,17 +3745,17 @@ function printGaji() {
   const days=getDays(currentMonth);const wks=getWeeks(days);
   const [y,m]=currentMonth.split('-').map(Number); const mn=monthN[m];
 
-  const krData=karyawan.map((kr,ki)=>{
+  const krData=karyawan.map((kr,ki)=>({kr,ki})).filter(({kr})=>krAktif(kr,currentMonth)).map(({kr,ki})=>{
     let totalGaji=0;
     const weeks=wks.map(wk=>{
       let tM=0,tL=0;
       wk.forEach(d=>{
-        const v=(absenData[`${currentMonth}-${ki}-${d}`]||'').toUpperCase();
+        const v=(absenData[`${currentMonth}-${karyawan[ki].id}-${d}`]||'').toUpperCase();
         if(v&&!absenColors[v])tM+=parseTime(v);
-        tL+=parseInt(lemburData[`L-${currentMonth}-${ki}-${d}`]||0);
+        tL+=parseInt(lemburData[`L-${currentMonth}-${karyawan[ki].id}-${d}`]||0);
       });
-      const gP=Math.round(kr.gaji*(tM/480));
-      const gL=Math.round(tL*(lemburRate/60));
+      const gP=Math.round(krGaji(kr,currentMonth)*(tM/480));
+      const gL=Math.round(tL*(rateLembur(currentMonth)/60));
       totalGaji+=gP+gL;
       return {gP,gL};
     });
@@ -3526,9 +3775,9 @@ function printGaji() {
   });
 
   const html = PX.open(`Gaji ${mn} ${y}`)
-    + PX.header(`Laporan Gaji — ${mn} ${y}`, `*Lembur = Rp${lemburRate.toLocaleString('id-ID')}/jam · Gaji pokok = (jam/8jam)×gaji harian`)
+    + PX.header(`Laporan Gaji — ${mn} ${y}`, `*Lembur = Rp${rateLembur(currentMonth).toLocaleString('id-ID')}/jam · Gaji pokok = (jam/8jam)×gaji harian`)
     + `<div class="summary"><span>Total Bulan: <strong>${fmtRp(grandTotal)}</strong></span>
-        <span>Karyawan: <strong>${karyawan.length} orang</strong></span></div>
+        <span>Karyawan: <strong>${krJumlahAktif(karyawan,currentMonth)} orang</strong></span></div>
       <table>
         <thead>
           <tr><th class="l" rowspan="2">Nama</th><th rowspan="2">Total Bulan</th>${wkH}</tr>
@@ -3560,11 +3809,11 @@ function printLembur() {
   tHead+=`<th>Total</th></tr>`;
 
   let tBody='';
-  karyawan.forEach((kr,ki)=>{
+  karyawan.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
     let tot=0;
     let row=`<tr><td>${kr.nama}</td>`;
     days.forEach(({d})=>{
-      const k=`L-${currentMonth}-${ki}-${d}`;const v=lemburData[k]||'';
+      const k=`L-${currentMonth}-${karyawan[ki].id}-${d}`;const v=lemburData[k]||'';
       if(v)tot+=parseInt(v)||0;
       row+=`<td class="c" style="${v?'color:#C2500A;font-weight:700':''}">${v||''}</td>`;
     });
@@ -3573,7 +3822,7 @@ function printLembur() {
   });
 
   const html = PX.open(`Lembur ${mn} ${y}`)
-    + PX.header(`Lembur Karyawan — ${mn} ${y}`, `Satuan: menit · Rp${lemburRate.toLocaleString('id-ID')}/jam`)
+    + PX.header(`Lembur Karyawan — ${mn} ${y}`, `Satuan: menit · Rp${rateLembur(currentMonth).toLocaleString('id-ID')}/jam`)
     + `<table style="font-size:8px"><thead>${tHead}</thead><tbody>${tBody}</tbody></table>`
     + PX.close();
   PX.doOpen(html);
@@ -3594,11 +3843,11 @@ function printAbsensiSG() {
 
   const STATUS_CLR={I:'#1D4ED8',S:'#15803D',A:'#c0392b',B:'#9333EA'};
   let tBody='';
-  karyawanSG.forEach((kr,ki)=>{
+  karyawanSG.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
     let tot=0;
     let row=`<tr><td>${kr.nama}</td>`;
     days.forEach(({d,day})=>{
-      const k=`${currentMonth}-${ki}-${d}`;
+      const k=`${currentMonth}-${karyawanSG[ki].id}-${d}`;
       const v=(absenDataSG[k]||'').toUpperCase();
       const we=day===0||day===6;
       let bg=we?'background:#f5f5f5;':'';
@@ -3612,10 +3861,10 @@ function printAbsensiSG() {
   });
 
   const html = PX.open(`Absensi ${mn} ${y}`)
-    + PX.header(`Absensi Karyawan — ${mn} ${y}`, `Bulan: ${mn} ${y} · Total Karyawan: ${karyawanSG.length}`)
+    + PX.header(`Absensi Karyawan — ${mn} ${y}`, `Bulan: ${mn} ${y} · Total Karyawan: ${krJumlahAktif(karyawanSG,currentMonth)}`)
     + `<div class="summary">
         <span>Bulan: <strong>${mn} ${y}</strong></span>
-        <span>Karyawan: <strong>${karyawanSG.length} orang</strong></span>
+        <span>Karyawan: <strong>${krJumlahAktif(karyawanSG,currentMonth)} orang</strong></span>
         <span>I=Ijin · S=Sakit · A=Tanpa Ket · B=Diliburkan</span>
       </div>
       <table style="font-size:8px"><thead>${tHead}</thead><tbody>${tBody}</tbody></table>`
@@ -3631,17 +3880,17 @@ function printGajiSG() {
   const days=getDays(currentMonth);const wks=getWeeks(days);
   const [y,m]=currentMonth.split('-').map(Number); const mn=monthN[m];
 
-  const krData=karyawanSG.map((kr,ki)=>{
+  const krData=karyawanSG.map((kr,ki)=>({kr,ki})).filter(({kr})=>krAktif(kr,currentMonth)).map(({kr,ki})=>{
     let totalGaji=0;
     const weeks=wks.map(wk=>{
       let tM=0,tL=0;
       wk.forEach(d=>{
-        const v=(absenDataSG[`${currentMonth}-${ki}-${d}`]||'').toUpperCase();
+        const v=(absenDataSG[`${currentMonth}-${karyawanSG[ki].id}-${d}`]||'').toUpperCase();
         if(v&&!absenColors[v])tM+=parseTime(v);
-        tL+=parseInt(lemburDataSG[`L-${currentMonth}-${ki}-${d}`]||0);
+        tL+=parseInt(lemburDataSG[`L-${currentMonth}-${karyawanSG[ki].id}-${d}`]||0);
       });
-      const gP=Math.round(kr.gaji*(tM/480));
-      const gL=Math.round(tL*(lemburRateSG/60));
+      const gP=Math.round(krGaji(kr,currentMonth)*(tM/480));
+      const gL=Math.round(tL*(rateLemburSG(currentMonth)/60));
       totalGaji+=gP+gL;
       return {gP,gL};
     });
@@ -3661,9 +3910,9 @@ function printGajiSG() {
   });
 
   const html = PX.open(`Gaji ${mn} ${y}`)
-    + PX.header(`Laporan Gaji — ${mn} ${y}`, `*Lembur = Rp${lemburRateSG.toLocaleString('id-ID')}/jam · Gaji pokok = (jam/8jam)×gaji harian`)
+    + PX.header(`Laporan Gaji — ${mn} ${y}`, `*Lembur = Rp${rateLemburSG(currentMonth).toLocaleString('id-ID')}/jam · Gaji pokok = (jam/8jam)×gaji harian`)
     + `<div class="summary"><span>Total Bulan: <strong>${fmtRp(grandTotal)}</strong></span>
-        <span>Karyawan: <strong>${karyawanSG.length} orang</strong></span></div>
+        <span>Karyawan: <strong>${krJumlahAktif(karyawanSG,currentMonth)} orang</strong></span></div>
       <table>
         <thead>
           <tr><th class="l" rowspan="2">Nama</th><th rowspan="2">Total Bulan</th>${wkH}</tr>
@@ -3695,11 +3944,11 @@ function printLemburSG() {
   tHead+=`<th>Total</th></tr>`;
 
   let tBody='';
-  karyawanSG.forEach((kr,ki)=>{
+  karyawanSG.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
     let tot=0;
     let row=`<tr><td>${kr.nama}</td>`;
     days.forEach(({d})=>{
-      const k=`L-${currentMonth}-${ki}-${d}`;const v=lemburDataSG[k]||'';
+      const k=`L-${currentMonth}-${karyawanSG[ki].id}-${d}`;const v=lemburDataSG[k]||'';
       if(v)tot+=parseInt(v)||0;
       row+=`<td class="c" style="${v?'color:#C2500A;font-weight:700':''}">${v||''}</td>`;
     });
@@ -3708,7 +3957,7 @@ function printLemburSG() {
   });
 
   const html = PX.open(`Lembur ${mn} ${y}`)
-    + PX.header(`Lembur Karyawan — ${mn} ${y}`, `Satuan: menit · Rp${lemburRateSG.toLocaleString('id-ID')}/jam`)
+    + PX.header(`Lembur Karyawan — ${mn} ${y}`, `Satuan: menit · Rp${rateLemburSG(currentMonth).toLocaleString('id-ID')}/jam`)
     + `<table style="font-size:8px"><thead>${tHead}</thead><tbody>${tBody}</tbody></table>`
     + PX.close();
   PX.doOpen(html);
@@ -4319,6 +4568,7 @@ function renderJumlahTanaman(lok) {
 
   html += jtBuildRekap(lok, conf, hasK);
   document.getElementById('MC').innerHTML = html;
+  applyReadOnlyGuard();
 }
 
 // Router: Ngadikerso (3) pakai layout bertumpuk (A1→A2→A3 ke bawah, B di samping).
@@ -5831,6 +6081,7 @@ function renderPlastikUV(lok) {
         <tbody>${bodyHtml}</tbody>
       </table>
     </div>`;
+  applyReadOnlyGuard();
 }
 
 // ── Menu "⋮" satu-satunya titik edit per rumah (buka lewat modal MO yang sudah ada) ──
