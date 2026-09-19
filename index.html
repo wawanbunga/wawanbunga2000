@@ -128,10 +128,10 @@ tr:nth-child(even) td{background:#fdf8f5}
   width:100%;max-width:400px;max-height:72vh;overflow-y:auto;
   transform:translateY(60px);transition:transform .28s cubic-bezier(.32,1,.5,1)}
 .mo.show .ms{transform:translateY(0)}
-.td-sticky{position:sticky;left:0;background:#fff;z-index:2;min-width:84px;max-width:100px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.td-sticky{position:sticky;left:0;background:#fff;z-index:2;min-width:84px;max-width:100px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-transform:translateZ(0);transform:translateZ(0)}
 th.td-sticky{background:linear-gradient(135deg,#E8650A,#C2500A);}
 tr:nth-child(even) td.td-sticky{background:#fdf8f5}
-.thead-sticky th{position:sticky;top:0;z-index:3}
+.thead-sticky th{position:sticky;top:0;z-index:3;-webkit-transform:translateZ(0);transform:translateZ(0)}
 .thead-sticky th.td-sticky{z-index:4}
 .tbl-scroll-y{max-height:65vh;overflow-y:auto}
 .mh{width:28px;height:3px;background:var(--b);border-radius:2px;margin:10px auto 12px}
@@ -1799,7 +1799,7 @@ function renderAbsensi() {
   </select>
   <div class="tbl-wrap tbl-scroll-y"><table><thead class="thead-sticky"><tr><th class="td-sticky">Nama</th>`;
   days.forEach(({d,day})=>{
-    let whBg = day===0 ? 'background:rgba(192,57,43,.6)' : (day===6 ? 'background:rgba(0,0,0,.25)' : '');
+    let whBg = day===0 ? 'background:#c0392b' : (day===6 ? 'background:#9c4507' : '');
     html+=`<th style="${whBg}">${d}<br>${dayN[day]}</th>`;
   });
   html+=`<th>Jam</th></tr></thead><tbody>`;
@@ -1929,7 +1929,7 @@ function renderLembur(){
   </select>
   <p style="font-size:11px;color:var(--tl);margin-bottom:8px">Tabel dalam menit. Ketuk nama untuk input cepat.</p>
   <div class="tbl-wrap tbl-scroll-y"><table><thead class="thead-sticky"><tr><th class="td-sticky">Nama</th>`;
-  days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
+  days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:#9c4507':''}">${d}<br>${dayN[day]}</th>`;});
   html+=`<th>Total</th></tr></thead><tbody>`;
   karyawan.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
     let tot=0;
@@ -2311,7 +2311,7 @@ function renderAbsensiSG() {
     ${buildMonthOptsAbsen(currentMonth)}
   </select>
   <div class="tbl-wrap tbl-scroll-y"><table><thead class="thead-sticky"><tr><th class="td-sticky">Nama</th>`;
-  days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
+  days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:#9c4507':''}">${d}<br>${dayN[day]}</th>`;});
   html+=`<th>Jam</th></tr></thead><tbody>`;
   karyawanSG.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
     let tot=0;
@@ -2413,7 +2413,7 @@ function renderLemburSG(){
   </select>
   <p style="font-size:11px;color:var(--tl);margin-bottom:8px">Tabel dalam menit. Ketuk nama untuk input cepat.</p>
   <div class="tbl-wrap tbl-scroll-y"><table><thead class="thead-sticky"><tr><th class="td-sticky">Nama</th>`;
-  days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
+  days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:#9c4507':''}">${d}<br>${dayN[day]}</th>`;});
   html+=`<th>Total</th></tr></thead><tbody>`;
   karyawanSG.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
     let tot=0;
