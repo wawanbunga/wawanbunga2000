@@ -1798,7 +1798,10 @@ function renderAbsensi() {
     ${buildMonthOptsAbsen(currentMonth)}
   </select>
   <div class="tbl-wrap tbl-scroll-y"><table><thead class="thead-sticky"><tr><th class="td-sticky">Nama</th>`;
-  days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
+  days.forEach(({d,day})=>{
+    let whBg = day===0 ? 'background:rgba(192,57,43,.6)' : (day===6 ? 'background:rgba(0,0,0,.25)' : '');
+    html+=`<th style="${whBg}">${d}<br>${dayN[day]}</th>`;
+  });
   html+=`<th>Jam</th></tr></thead><tbody>`;
   karyawan.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
     let tot=0;
@@ -1806,10 +1809,13 @@ function renderAbsensi() {
     days.forEach(({d,day})=>{
       const k=`${currentMonth}-${karyawan[ki].id}-${d}`;
       const v=(absenData[k]||'').toUpperCase();
-      const we=day===0||day===6;
-      let st=we?'background:#fdf8f5;':'';
+      let st = day===0 ? 'background:rgba(192,57,43,.6);' : (day===6 ? 'background:#fdf8f5;' : '');
       if(absenStyle[v])st+=absenStyle[v];
-      if(v&&!absenColors[v]){tot+=parseTime(v);if(!krParseJam(v))st+='outline:2px solid #c0392b;outline-offset:-2px;';}
+      if(v&&!absenColors[v]){
+        tot+=parseTime(v);
+        if(!krParseJam(v)) st+='outline:2px solid #c0392b;outline-offset:-2px;';
+        else if(parseTime(v)<480) st+='box-shadow:inset 0 -3px 0 0 #eab308;';
+      }
       html+=`<td style="${st};cursor:pointer" onclick="openAbsenModal(${ki},${d},'${k}')">${v||''}</td>`;
     });
     html+=`<td style="font-weight:700;color:var(--or)">${fmtMins(tot)}</td></tr>`;
