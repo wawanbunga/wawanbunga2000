@@ -1064,6 +1064,56 @@ function krSetRateLembur(k){
   toast(dari==='0000-00' ? '✅ Tarif lembur dikoreksi untuk semua bulan' : '✅ Tarif lembur baru berlaku mulai '+krLabelBulan(dari));
 }
 
+// ══════════════════════════════════════════════════════════
+// ── FORMAT JAM: hanya "8:00" atau "8" (absen & lembur) ──
+// Absen tersimpan "8:00". Lembur diketik dalam jam ("1:30" atau "2"),
+// tersimpan dalam MENIT (sama seperti data lama, hitungan gaji tidak berubah).
+// ══════════════════════════════════════════════════════════
+function krParseJam(raw, maxMenit){
+  const s=String(raw==null?'':raw).trim();
+  const m=s.match(/^(\d{1,2})(?::([0-5]\d))?$/);
+  if(!m) return null;
+  const h=+m[1], mn=m[2]?+m[2]:0;
+  const menit=h*60+mn;
+  if(menit<=0 || menit>(maxMenit||1440)) return null;
+  return {menit, teks:h+':'+String(mn).padStart(2,'0')};
+}
+function isiJamCepat(inputId, prevId){
+  const el=document.getElementById(inputId); if(!el) return;
+  el.value='8:00';
+  krPreviewJam(el, prevId);
+}
+function mcScrollGet(){ const w=document.querySelector('#MC .tbl-wrap, #MC .puv-tablewrap'); return { x:w?w.scrollLeft:0, y:window.scrollY||window.pageYOffset||0 }; }
+function mcScrollSet(pos){ const w=document.querySelector('#MC .tbl-wrap, #MC .puv-tablewrap'); if(w) w.scrollLeft=pos.x; window.scrollTo(0,pos.y); }
+function krPreviewMenit(inp, outId){
+  const out=document.getElementById(outId); if(!out) return;
+  const v=inp.value.trim();
+  if(!v){ out.textContent=''; return; }
+  const n=parseInt(v,10);
+  if(!/^\d+$/.test(v) || isNaN(n) || n<=0 || n>720){
+    out.style.color='#c0392b';
+    out.textContent='⚠️ Isi angka menit (maksimal 720 = 12 jam)';
+    return;
+  }
+  out.style.color='var(--tl)';
+  const h=Math.floor(n/60), mn=n%60;
+  out.textContent = '= '+(h?h+' jam':'')+(h&&mn?' ':'')+(mn?mn+' menit':'');
+}
+function krPreviewJam(inp, outId, lembur){
+  const out=document.getElementById(outId); if(!out) return;
+  const v=inp.value.trim();
+  if(!v){ out.textContent=''; return; }
+  const r=krParseJam(v, lembur?720:1440);
+  if(!r){
+    out.style.color='#c0392b';
+    out.textContent = lembur ? '⚠️ Tulis 1:30 atau 2 (maksimal 12 jam)' : '⚠️ Format salah — tulis 8:00 atau 8';
+    return;
+  }
+  out.style.color='var(--tl)';
+  const h=Math.floor(r.menit/60), mn=r.menit%60;
+  out.textContent = '= '+(h?h+' jam':'')+(h&&mn?' ':'')+(mn?mn+' menit':'')+(lembur?' ('+r.menit+' menit)':'');
+}
+
 // Mulai Firebase
 fbInit();
 
@@ -1110,6 +1160,7 @@ const absenStyle={I:'color:#1D4ED8;background:#eff6ff',S:'color:#15803D;backgrou
 let navStack = [];
 
 function pushNav(entry) {
+  currentMonth = todayYM();
   navStack.push(entry);
   applyNav(entry);
   // push browser history state so phone back button works
@@ -1708,6 +1759,7 @@ function openEditAkun(uid) {
 // ── ABSENSI ───────────────────────────────────────────────
 function renderAbsensi() {
   clampToAbsenMonth();
+  const _sl=mcScrollGet();
   const days = getDays(currentMonth);
   const [y,m] = currentMonth.split('-').map(Number);
   let html = `<div class="legend-row">
@@ -1735,13 +1787,14 @@ function renderAbsensi() {
       const we=day===0||day===6;
       let st=we?'background:#fdf8f5;':'';
       if(absenStyle[v])st+=absenStyle[v];
-      if(v&&!absenColors[v])tot+=parseTime(v);
+      if(v&&!absenColors[v]){tot+=parseTime(v);if(!krParseJam(v))st+='outline:2px solid #c0392b;outline-offset:-2px;';}
       html+=`<td style="${st};cursor:pointer" onclick="openAbsenModal(${ki},${d},'${k}')">${v||''}</td>`;
     });
     html+=`<td style="font-weight:700;color:var(--or)">${fmtMins(tot)}</td></tr>`;
   });
   html+=`</tbody></table></div>`;
   document.getElementById('MC').innerHTML=html;
+  mcScrollSet(_sl);
   applyReadOnlyGuard();
 }
 
@@ -1788,11 +1841,13 @@ function openAbsenModal(ki,d,key){
       </div>
     </div>
     <div class="fg2" id="jam-inp" ${absenColors[cur]&&cur?'style="display:none"':''}>
-      <label>Jam Kerja (cth: 8:00 atau 5:20)</label>
+      <label>Jam Kerja (tulis 8:00 atau 8)</label>
       <div style="display:flex;gap:6px;align-items:center">
-        <input class="fi2" type="text" id="mo-jam" value="${!absenColors[cur]?cur:''}" placeholder="8:00" style="flex:1">
+        <input class="fi2" type="text" id="mo-jam" value="${!absenColors[cur]?cur:''}" placeholder="8:00 atau 8" inputmode="text" maxlength="5" autocomplete="off" oninput="krPreviewJam(this,'jam-prev')" style="flex:1">
+        <button class="bsm bsm-o" style="flex-shrink:0" onclick="isiJamCepat('mo-jam','jam-prev')" title="Isi 8:00">8:00</button>
         <button class="bsm bsm-r" style="flex-shrink:0" onclick="hapusAbsen('${key}')" title="Hapus"><i class="ti ti-trash" aria-hidden="true"></i></button>
       </div>
+      <div id="jam-prev" style="font-size:11px;margin-top:4px;min-height:14px;color:var(--tl)"></div>
     </div>`;
   showMO();
 }
@@ -1822,7 +1877,12 @@ function openAbsenBatch(ki=-1){
         <option value="I">🔵 Ijin</option><option value="S">🟢 Sakit</option>
         <option value="A">🔴 Tanpa Keterangan</option><option value="B">🟣 Diliburkan</option>
       </select></div>
-    <div class="fg2" id="jam-inp2"><label>Jam Kerja</label><input class="fi2" type="text" id="mo-jam2" placeholder="8:00"></div>`;
+    <div class="fg2" id="jam-inp2"><label>Jam Kerja (tulis 8:00 atau 8)</label>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input class="fi2" type="text" id="mo-jam2" placeholder="8:00 atau 8" inputmode="text" maxlength="5" autocomplete="off" oninput="krPreviewJam(this,'jam-prev2')" style="flex:1">
+        <button class="bsm bsm-o" style="flex-shrink:0" onclick="isiJamCepat('mo-jam2','jam-prev2')" title="Isi 8:00">8:00</button>
+      </div>
+      <div id="jam-prev2" style="font-size:11px;margin-top:4px;min-height:14px;color:var(--tl)"></div></div>`;
   showMO();
 }
 function toggleJam2(v){document.getElementById('jam-inp2').style.display=v==='jam'?'block':'none';}
@@ -1830,6 +1890,7 @@ function toggleJam2(v){document.getElementById('jam-inp2').style.display=v==='ja
 // ── LEMBUR ────────────────────────────────────────────────
 function renderLembur(){
   clampToAbsenMonth();
+  const _sl=mcScrollGet();
   const days=getDays(currentMonth);const[y,m]=currentMonth.split('-').map(Number);
   let html=`<div style="display:flex;gap:6px;margin-bottom:8px">
     <button class="btn-save" style="flex:1;padding:9px 14px;font-size:13px;border:none;cursor:pointer" onclick="openLemburBatch()"><i class="ti ti-plus" aria-hidden="true"></i> Input Lembur</button>
@@ -1838,7 +1899,7 @@ function renderLembur(){
   <select onchange="currentMonth=this.value;renderLembur()" class="sel-month" style="margin-bottom:8px">
     ${buildMonthOptsAbsen(currentMonth)}
   </select>
-  <p style="font-size:11px;color:var(--tl);margin-bottom:8px">Satuan: menit. Ketuk nama untuk input cepat.</p>
+  <p style="font-size:11px;color:var(--tl);margin-bottom:8px">Tabel dalam menit. Ketuk nama untuk input cepat.</p>
   <div class="tbl-wrap"><table><thead><tr><th class="td-sticky">Nama</th>`;
   days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
   html+=`<th>Total</th></tr></thead><tbody>`;
@@ -1854,6 +1915,7 @@ function renderLembur(){
   });
   html+=`</tbody></table></div>`;
   document.getElementById('MC').innerHTML=html;
+  mcScrollSet(_sl);
 }
 function openLemburModal(ki,d,key){
   const kr=karyawan[ki];const[y,m]=currentMonth.split('-').map(Number);
@@ -1864,11 +1926,12 @@ function openLemburModal(ki,d,key){
     <div class="info-row"><span style="color:var(--tl)">Nama</span><span class="info-val">${kr.nama}</span></div>
     <div class="info-row"><span style="color:var(--tl)">Tanggal</span><span class="info-val or">${d} ${monthN[m]} — ${dayN[dt.getDay()]}</span></div>
     <div style="height:4px"></div>
-    <div class="fg2"><label>Jam Lembur (menit)</label>
+    <div class="fg2"><label>Lembur (menit)</label>
       <div style="display:flex;gap:6px;align-items:center">
-        <input class="fi2" type="number" id="mo-lem" value="${cur}" placeholder="90" style="flex:1">
+        <input class="fi2" type="text" id="mo-lem" value="${(parseInt(cur)>0)?parseInt(cur):''}" placeholder="menit, misal 90" inputmode="numeric" maxlength="3" autocomplete="off" oninput="krPreviewMenit(this,'lem-prev')" style="flex:1">
         <button class="bsm bsm-r" style="flex-shrink:0" onclick="hapusLembur('${key}')" title="Hapus"><i class="ti ti-trash" aria-hidden="true"></i></button>
       </div>
+      <div id="lem-prev" style="font-size:11px;margin-top:4px;min-height:14px;color:var(--tl)">${(()=>{const n=parseInt(cur)||0;if(n<=0)return '';const h=Math.floor(n/60),mn=n%60;return '= '+(h?h+' jam':'')+(h&&mn?' ':'')+(mn?mn+' menit':'');})()}</div>
     </div>`;
   showMO();
 }
@@ -1890,7 +1953,7 @@ function openLemburBatch(ki=-1){
     <div class="fg2"><label>Tanggal</label>
       <input class="fi2" type="date" id="mo-tgl-l" min="${minDate}" max="${maxDate}" value="${defDate}">
     </div>
-    <div class="fg2"><label>Jam Lembur (menit)</label><input class="fi2" type="number" id="mo-lem-b" placeholder="90"></div>`;
+    <div class="fg2"><label>Lembur (menit)</label><input class="fi2" type="text" id="mo-lem-b" placeholder="menit, misal 90" inputmode="numeric" maxlength="3" autocomplete="off" oninput="krPreviewMenit(this,'lem-prev-b')"><div id="lem-prev-b" style="font-size:11px;margin-top:4px;min-height:14px;color:var(--tl)"></div></div>`;
   showMO();
 }
 
@@ -2203,6 +2266,7 @@ function renderAbsenMenuSG() {
 function renderAbsensiSG() {
   CURRENT_LOC = 4;
   clampToAbsenMonth();
+  const _sl=mcScrollGet();
   const days = getDays(currentMonth);
   const [y,m] = currentMonth.split('-').map(Number);
   let html = `<div class="legend-row">
@@ -2230,13 +2294,14 @@ function renderAbsensiSG() {
       const we=day===0||day===6;
       let st=we?'background:#fdf8f5;':'';
       if(absenStyle[v])st+=absenStyle[v];
-      if(v&&!absenColors[v])tot+=parseTime(v);
+      if(v&&!absenColors[v]){tot+=parseTime(v);if(!krParseJam(v))st+='outline:2px solid #c0392b;outline-offset:-2px;';}
       html+=`<td style="${st};cursor:pointer" onclick="openAbsenModalSG(${ki},${d},'${k}')">${v||''}</td>`;
     });
     html+=`<td style="font-weight:700;color:var(--or)">${fmtMins(tot)}</td></tr>`;
   });
   html+=`</tbody></table></div>`;
   document.getElementById('MC').innerHTML=html;
+  mcScrollSet(_sl);
 }
 
 function openAbsenModalSG(ki,d,key){
@@ -2261,11 +2326,13 @@ function openAbsenModalSG(ki,d,key){
       </div>
     </div>
     <div class="fg2" id="jam-inp" ${absenColors[cur]&&cur?'style="display:none"':''}>
-      <label>Jam Kerja (cth: 8:00 atau 5:20)</label>
+      <label>Jam Kerja (tulis 8:00 atau 8)</label>
       <div style="display:flex;gap:6px;align-items:center">
-        <input class="fi2" type="text" id="mo-jam" value="${!absenColors[cur]?cur:''}" placeholder="8:00" style="flex:1">
+        <input class="fi2" type="text" id="mo-jam" value="${!absenColors[cur]?cur:''}" placeholder="8:00 atau 8" inputmode="text" maxlength="5" autocomplete="off" oninput="krPreviewJam(this,'jam-prev')" style="flex:1">
+        <button class="bsm bsm-o" style="flex-shrink:0" onclick="isiJamCepat('mo-jam','jam-prev')" title="Isi 8:00">8:00</button>
         <button class="bsm bsm-r" style="flex-shrink:0" onclick="hapusAbsenSG('${key}')" title="Hapus"><i class="ti ti-trash" aria-hidden="true"></i></button>
       </div>
+      <div id="jam-prev" style="font-size:11px;margin-top:4px;min-height:14px;color:var(--tl)"></div>
     </div>`;
   showMO();
 }
@@ -2294,7 +2361,12 @@ function openAbsenBatchSG(ki=-1){
         <option value="I">🔵 Ijin</option><option value="S">🟢 Sakit</option>
         <option value="A">🔴 Tanpa Keterangan</option><option value="B">🟣 Diliburkan</option>
       </select></div>
-    <div class="fg2" id="jam-inp2"><label>Jam Kerja</label><input class="fi2" type="text" id="mo-jam2" placeholder="8:00"></div>`;
+    <div class="fg2" id="jam-inp2"><label>Jam Kerja (tulis 8:00 atau 8)</label>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input class="fi2" type="text" id="mo-jam2" placeholder="8:00 atau 8" inputmode="text" maxlength="5" autocomplete="off" oninput="krPreviewJam(this,'jam-prev2')" style="flex:1">
+        <button class="bsm bsm-o" style="flex-shrink:0" onclick="isiJamCepat('mo-jam2','jam-prev2')" title="Isi 8:00">8:00</button>
+      </div>
+      <div id="jam-prev2" style="font-size:11px;margin-top:4px;min-height:14px;color:var(--tl)"></div></div>`;
   showMO();
 }
 
@@ -2302,6 +2374,7 @@ function openAbsenBatchSG(ki=-1){
 function renderLemburSG(){
   CURRENT_LOC = 4;
   clampToAbsenMonth();
+  const _sl=mcScrollGet();
   const days=getDays(currentMonth);const[y,m]=currentMonth.split('-').map(Number);
   let html=`<div style="display:flex;gap:6px;margin-bottom:8px">
     <button class="btn-save" style="flex:1;padding:9px 14px;font-size:13px;border:none;cursor:pointer" onclick="openLemburBatchSG()"><i class="ti ti-plus" aria-hidden="true"></i> Input Lembur</button>
@@ -2310,7 +2383,7 @@ function renderLemburSG(){
   <select onchange="currentMonth=this.value;renderLemburSG()" class="sel-month" style="margin-bottom:8px">
     ${buildMonthOptsAbsen(currentMonth)}
   </select>
-  <p style="font-size:11px;color:var(--tl);margin-bottom:8px">Satuan: menit. Ketuk nama untuk input cepat.</p>
+  <p style="font-size:11px;color:var(--tl);margin-bottom:8px">Tabel dalam menit. Ketuk nama untuk input cepat.</p>
   <div class="tbl-wrap"><table><thead><tr><th class="td-sticky">Nama</th>`;
   days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
   html+=`<th>Total</th></tr></thead><tbody>`;
@@ -2326,6 +2399,7 @@ function renderLemburSG(){
   });
   html+=`</tbody></table></div>`;
   document.getElementById('MC').innerHTML=html;
+  mcScrollSet(_sl);
 }
 function openLemburModalSG(ki,d,key){
   const kr=karyawanSG[ki];const[y,m]=currentMonth.split('-').map(Number);
@@ -2336,11 +2410,12 @@ function openLemburModalSG(ki,d,key){
     <div class="info-row"><span style="color:var(--tl)">Nama</span><span class="info-val">${kr.nama}</span></div>
     <div class="info-row"><span style="color:var(--tl)">Tanggal</span><span class="info-val or">${d} ${monthN[m]} — ${dayN[dt.getDay()]}</span></div>
     <div style="height:4px"></div>
-    <div class="fg2"><label>Jam Lembur (menit)</label>
+    <div class="fg2"><label>Lembur (menit)</label>
       <div style="display:flex;gap:6px;align-items:center">
-        <input class="fi2" type="number" id="mo-lem" value="${cur}" placeholder="90" style="flex:1">
+        <input class="fi2" type="text" id="mo-lem" value="${(parseInt(cur)>0)?parseInt(cur):''}" placeholder="menit, misal 90" inputmode="numeric" maxlength="3" autocomplete="off" oninput="krPreviewMenit(this,'lem-prev')" style="flex:1">
         <button class="bsm bsm-r" style="flex-shrink:0" onclick="hapusLemburSG('${key}')" title="Hapus"><i class="ti ti-trash" aria-hidden="true"></i></button>
       </div>
+      <div id="lem-prev" style="font-size:11px;margin-top:4px;min-height:14px;color:var(--tl)">${(()=>{const n=parseInt(cur)||0;if(n<=0)return '';const h=Math.floor(n/60),mn=n%60;return '= '+(h?h+' jam':'')+(h&&mn?' ':'')+(mn?mn+' menit':'');})()}</div>
     </div>`;
   showMO();
 }
@@ -2362,7 +2437,7 @@ function openLemburBatchSG(ki=-1){
     <div class="fg2"><label>Tanggal</label>
       <input class="fi2" type="date" id="mo-tgl-l" min="${minDate}" max="${maxDate}" value="${defDate}">
     </div>
-    <div class="fg2"><label>Jam Lembur (menit)</label><input class="fi2" type="number" id="mo-lem-b" placeholder="90"></div>`;
+    <div class="fg2"><label>Lembur (menit)</label><input class="fi2" type="text" id="mo-lem-b" placeholder="menit, misal 90" inputmode="numeric" maxlength="3" autocomplete="off" oninput="krPreviewMenit(this,'lem-prev-b')"><div id="lem-prev-b" style="font-size:11px;margin-top:4px;min-height:14px;color:var(--tl)"></div></div>`;
   showMO();
 }
 
@@ -2588,6 +2663,7 @@ function renderKaryawanSG(){ renderDaftarKr('sg'); }
 function renderPanen(t){
   CURRENT_LOC = t;
   clampToAbsenMonth();
+  const _sl=mcScrollGet();
   const days=getDays(currentMonth);const[y,m]=currentMonth.split('-').map(Number);
   if(!panenData[t])panenData[t]={};
   const mm=String(m).padStart(2,'0');
@@ -2610,6 +2686,7 @@ function renderPanen(t){
     html+=`<td style="font-weight:700;color:var(--or)">${tot||''}</td><td style="${rk?'color:#c0392b':''}">${rk||''}</td></tr>`;
   });
   html+=`</tbody></table></div>`;document.getElementById('MC').innerHTML=html;
+  mcScrollSet(_sl);
   applyReadOnlyGuard();
 }
 function openPanenMO(t,d){
@@ -2805,6 +2882,7 @@ function dosisSel(id,val=''){return `<select class="fi2" id="${id}" style="width
 function renderObat(t){
   CURRENT_LOC = t;
   clampToAbsenMonth();
+  const _sl=mcScrollGet();
   const rows=obatData[t]||[];
   const[y,m]=currentMonth.split('-').map(Number);
   let html=`<div style="margin-bottom:10px">
@@ -2835,6 +2913,7 @@ function renderObat(t){
     </div>`;
   });
   document.getElementById('MC').innerHTML=html;
+  mcScrollSet(_sl);
   applyReadOnlyGuard();
 }
 
@@ -2889,6 +2968,7 @@ function pupukSel(id,val=''){return `<select class="fi2" id="${id}" style="width
 function renderDrip(t){
   CURRENT_LOC = t;
   clampToAbsenMonth();
+  const _sl=mcScrollGet();
   const rows=dripData[t]||[];
   const[y,m]=currentMonth.split('-').map(Number);
   let html=`<div style="display:flex;gap:6px;margin-bottom:8px">
@@ -2917,6 +2997,7 @@ function renderDrip(t){
     </div>`;
   });
   document.getElementById('MC').innerHTML=html;
+  mcScrollSet(_sl);
   applyReadOnlyGuard();
 }
 
@@ -3217,6 +3298,7 @@ function hapusPekerjaBedeng(t){
 function renderMatun(t) {
   CURRENT_LOC = t;
   clampToAbsenMonth();
+  const _sl=mcScrollGet();
   const days = getDays(currentMonth);
   const [y,m] = currentMonth.split('-').map(Number);
   const conf = MATUN_CONF[t];
@@ -3347,6 +3429,7 @@ function renderMatun(t) {
 
   html+=`</tbody></table></div>`;
   document.getElementById('MC').innerHTML=html;
+  mcScrollSet(_sl);
   applyReadOnlyGuard();
 }
 
@@ -3449,6 +3532,27 @@ function saveMO(){
   const mc=moCtx;
   if(mc.type==='kr-stop'){ krSimpanStop(); return; }
   if(mc.type==='kr-form'){ krSimpanForm(); return; }
+  // ── Validasi format jam: 8:00 atau 8 ──
+  if(mc.type==='absen'||mc.type==='absen-sg'||mc.type==='absen-batch'||mc.type==='absen-batch-sg'){
+    const batch=mc.type.indexOf('batch')>=0;
+    const jenis=document.getElementById(batch?'mo-jenis2':'mo-jenis');
+    if(jenis && jenis.value==='jam'){
+      const inp=document.getElementById(batch?'mo-jam2':'mo-jam');
+      const raw=inp?inp.value.trim():'';
+      if(raw===''){ if(batch){ toast('❌ Isi jam kerja, tulis 8:00 atau 8'); return; } }
+      else { const r=krParseJam(raw); if(!r){ toast('❌ Format jam salah. Tulis 8:00 atau 8'); if(inp) inp.focus(); return; } inp.value=r.teks; }
+    }
+  } else if(mc.type==='lembur'||mc.type==='lembur-sg'||mc.type==='lembur-batch'||mc.type==='lembur-batch-sg'){
+    const batch=mc.type.indexOf('batch')>=0;
+    const inp=document.getElementById(batch?'mo-lem-b':'mo-lem');
+    const raw=inp?inp.value.trim():'';
+    if(raw===''){ if(batch){ toast('❌ Isi lembur dalam menit'); return; } }
+    else {
+      const n=parseInt(raw,10);
+      if(!/^\d+$/.test(raw) || isNaN(n) || n<=0 || n>720){ toast('❌ Isi angka menit yang benar (maksimal 720)'); if(inp) inp.focus(); return; }
+      inp.value=String(n);
+    }
+  }
   if(mc.type==='absen'){
     const j=document.getElementById('mo-jenis').value;
     const jam=document.getElementById('mo-jam')?document.getElementById('mo-jam').value:'';
@@ -6007,6 +6111,7 @@ function renderPlastikUVMenu() {
 // ── RENDER UTAMA ──────────────────────────────────────────
 function renderPlastikUV(lok) {
   CURRENT_LOC = lok;
+  const _sl=mcScrollGet();
   const conf = PUV_CONF[lok];
   if (!puvData[lok]) puvData[lok] = PUV_SEED.data[lok];
   if (!puvCells[lok]) puvCells[lok] = PUV_SEED.cells[lok] || {};
@@ -6081,6 +6186,7 @@ function renderPlastikUV(lok) {
         <tbody>${bodyHtml}</tbody>
       </table>
     </div>`;
+  mcScrollSet(_sl);
   applyReadOnlyGuard();
 }
 
