@@ -131,6 +131,9 @@ tr:nth-child(even) td{background:#fdf8f5}
 .td-sticky{position:sticky;left:0;background:#fff;z-index:2;min-width:84px;max-width:100px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 th.td-sticky{background:linear-gradient(135deg,#E8650A,#C2500A);}
 tr:nth-child(even) td.td-sticky{background:#fdf8f5}
+.thead-sticky th{position:sticky;top:0;z-index:3}
+.thead-sticky th.td-sticky{z-index:4}
+.tbl-scroll-y{max-height:65vh;overflow-y:auto}
 .mh{width:28px;height:3px;background:var(--b);border-radius:2px;margin:10px auto 12px}
 .mt{font-family:'Playfair Display',serif;font-size:14px;color:var(--or);margin-bottom:11px}
 .fg2{margin-bottom:9px}
@@ -1794,7 +1797,7 @@ function renderAbsensi() {
   <select onchange="currentMonth=this.value;renderAbsensi()" class="sel-month" style="margin-bottom:10px">
     ${buildMonthOptsAbsen(currentMonth)}
   </select>
-  <div class="tbl-wrap"><table><thead><tr><th class="td-sticky">Nama</th>`;
+  <div class="tbl-wrap tbl-scroll-y"><table><thead class="thead-sticky"><tr><th class="td-sticky">Nama</th>`;
   days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
   html+=`<th>Jam</th></tr></thead><tbody>`;
   karyawan.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
@@ -1919,7 +1922,7 @@ function renderLembur(){
     ${buildMonthOptsAbsen(currentMonth)}
   </select>
   <p style="font-size:11px;color:var(--tl);margin-bottom:8px">Tabel dalam menit. Ketuk nama untuk input cepat.</p>
-  <div class="tbl-wrap"><table><thead><tr><th class="td-sticky">Nama</th>`;
+  <div class="tbl-wrap tbl-scroll-y"><table><thead class="thead-sticky"><tr><th class="td-sticky">Nama</th>`;
   days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
   html+=`<th>Total</th></tr></thead><tbody>`;
   karyawan.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
@@ -2198,7 +2201,7 @@ function renderGaji(){
     <table style="min-width:${320+wks.length*120}px">
       <thead>
         <tr>
-          <th rowspan="2" style="text-align:left;min-width:80px">Nama</th>
+          <th rowspan="2" class="td-sticky" style="text-align:left;min-width:110px;max-width:130px">Nama</th>
           <th rowspan="2" style="min-width:90px">Total Bulan</th>
           ${wkHeaders}
         </tr>
@@ -2210,7 +2213,7 @@ function renderGaji(){
   krData.forEach(({kr,weeks,totalGaji})=>{
     grandTotal+=totalGaji;
     html+=`<tr>
-      <td style="font-weight:700">${kr.nama}<br><span class="badge ${kr.tipe==='bulanan'?'b-bl':'b-or'}" style="font-size:9px;margin-top:2px;display:inline-block">${kr.tipe==='bulanan'?'Bln':'Mgg'}</span></td>
+      <td class="td-sticky" style="font-weight:700;min-width:110px;max-width:130px;white-space:normal">${kr.nama}<br><span class="badge ${kr.tipe==='bulanan'?'b-bl':'b-or'}" style="font-size:9px;margin-top:2px;display:inline-block">${kr.tipe==='bulanan'?'Bln':'Mgg'}</span></td>
       <td style="font-weight:700;color:var(--or);text-align:center">${fmtRp(totalGaji)}</td>
       ${weeks.map(w=>`<td style="text-align:center">${w.gP?fmtRp(w.gP):'-'}</td><td style="text-align:center;color:${w.gL?'#1D4ED8':'var(--tl)'}">${w.gL?fmtRp(w.gL):'-'}</td>`).join('')}
     </tr>`;
@@ -2219,7 +2222,7 @@ function renderGaji(){
   html+=`</tbody>
       <tfoot>
         <tr style="background:var(--orp)">
-          <td style="font-weight:700;color:var(--or)">TOTAL</td>
+          <td class="td-sticky" style="font-weight:700;color:var(--or);min-width:110px;max-width:130px;background:var(--orp)">TOTAL</td>
           <td style="font-weight:700;color:var(--or);text-align:center">${fmtRp(grandTotal)}</td>
           ${wks.map((_,wi)=>{
             const wTot=krData.reduce((s,{weeks})=>s+weeks[wi].gP,0);
@@ -2301,7 +2304,7 @@ function renderAbsensiSG() {
   <select onchange="currentMonth=this.value;renderAbsensiSG()" class="sel-month" style="margin-bottom:10px">
     ${buildMonthOptsAbsen(currentMonth)}
   </select>
-  <div class="tbl-wrap"><table><thead><tr><th class="td-sticky">Nama</th>`;
+  <div class="tbl-wrap tbl-scroll-y"><table><thead class="thead-sticky"><tr><th class="td-sticky">Nama</th>`;
   days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
   html+=`<th>Jam</th></tr></thead><tbody>`;
   karyawanSG.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
@@ -2403,7 +2406,7 @@ function renderLemburSG(){
     ${buildMonthOptsAbsen(currentMonth)}
   </select>
   <p style="font-size:11px;color:var(--tl);margin-bottom:8px">Tabel dalam menit. Ketuk nama untuk input cepat.</p>
-  <div class="tbl-wrap"><table><thead><tr><th class="td-sticky">Nama</th>`;
+  <div class="tbl-wrap tbl-scroll-y"><table><thead class="thead-sticky"><tr><th class="td-sticky">Nama</th>`;
   days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:rgba(0,0,0,.25)':''}">${d}<br>${dayN[day]}</th>`;});
   html+=`<th>Total</th></tr></thead><tbody>`;
   karyawanSG.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
@@ -2624,7 +2627,7 @@ function renderGajiSG(){
     <table style="min-width:${320+wks.length*120}px">
       <thead>
         <tr>
-          <th rowspan="2" style="text-align:left;min-width:80px">Nama</th>
+          <th rowspan="2" class="td-sticky" style="text-align:left;min-width:110px;max-width:130px">Nama</th>
           <th rowspan="2" style="min-width:90px">Total Bulan</th>
           ${wkHeaders}
         </tr>
@@ -2636,7 +2639,7 @@ function renderGajiSG(){
   krData.forEach(({kr,weeks,totalGaji})=>{
     grandTotal+=totalGaji;
     html+=`<tr>
-      <td style="font-weight:700">${kr.nama}<br><span class="badge ${kr.tipe==='bulanan'?'b-bl':'b-or'}" style="font-size:9px;margin-top:2px;display:inline-block">${kr.tipe==='bulanan'?'Bln':'Mgg'}</span></td>
+      <td class="td-sticky" style="font-weight:700;min-width:110px;max-width:130px;white-space:normal">${kr.nama}<br><span class="badge ${kr.tipe==='bulanan'?'b-bl':'b-or'}" style="font-size:9px;margin-top:2px;display:inline-block">${kr.tipe==='bulanan'?'Bln':'Mgg'}</span></td>
       <td style="font-weight:700;color:var(--or);text-align:center">${fmtRp(totalGaji)}</td>
       ${weeks.map(w=>`<td style="text-align:center">${w.gP?fmtRp(w.gP):'-'}</td><td style="text-align:center;color:${w.gL?'#1D4ED8':'var(--tl)'}">${w.gL?fmtRp(w.gL):'-'}</td>`).join('')}
     </tr>`;
@@ -2645,7 +2648,7 @@ function renderGajiSG(){
   html+=`</tbody>
       <tfoot>
         <tr style="background:var(--orp)">
-          <td style="font-weight:700;color:var(--or)">TOTAL</td>
+          <td class="td-sticky" style="font-weight:700;color:var(--or);min-width:110px;max-width:130px;background:var(--orp)">TOTAL</td>
           <td style="font-weight:700;color:var(--or);text-align:center">${fmtRp(grandTotal)}</td>
           ${wks.map((_,wi)=>{
             const wTot=krData.reduce((s,{weeks})=>s+weeks[wi].gP,0);
@@ -2695,7 +2698,7 @@ function renderPanen(t){
       ${t===4&&canManageJenisBunga()?`<button class="btn-save" style="padding:0 12px;font-size:12px;border:none;cursor:pointer;white-space:nowrap;background:#7C3AED" onclick="pushNav({title:'Jenis Bunga',sub:'Kelola master bunga',renderFn:renderJenisBunga,showBack:true})"><i class="ti ti-flower" aria-hidden="true"></i> Jenis Bunga</button>`:''}
     </div>
   </div>
-  <div class="tbl-wrap"><table><thead><tr><th class="td-sticky">Tgl</th>${bunga.map(b=>`<th>${b.split(' ')[0]}</th>`).join('')}<th>Total</th><th>Rusak</th></tr></thead><tbody>`;
+  <div class="tbl-wrap tbl-scroll-y"><table><thead class="thead-sticky"><tr><th class="td-sticky">Tgl</th>${bunga.map(b=>`<th>${b.split(' ')[0]}</th>`).join('')}<th>Total</th><th>Rusak</th></tr></thead><tbody>`;
   days.forEach(({d,day})=>{
     const we=day===0||day===6;let tot=0;
     const hasDat=bunga.some((_,bi)=>panenData[t][`P-${currentMonth}-${t}-${d}-${bi}`])||panenData[t][`P-${currentMonth}-${t}-${d}-rusak`];
@@ -2789,8 +2792,8 @@ function renderPanenRekap(){
   </div>
   <div class="cd" style="padding:0;overflow:hidden">
     <div style="padding:12px 12px 8px"><div class="ct" style="margin:0"><i class="ti ti-chart-bar" aria-hidden="true"></i>Rekap Panen ${monthN[m]} ${y}</div></div>
-    <div class="tbl-wrap"><table style="min-width:${200+bunga.length*55+90}px">
-      <thead><tr>
+    <div class="tbl-wrap tbl-scroll-y"><table style="min-width:${200+bunga.length*55+90}px">
+      <thead class="thead-sticky"><tr>
         <th class="td-sticky">Tgl</th>
         ${bunga.map(b=>`<th style="min-width:50px">${b.split(' ')[0]}</th>`).join('')}
         <th style="min-width:50px">Total</th>
