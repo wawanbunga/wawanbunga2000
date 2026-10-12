@@ -892,12 +892,12 @@ function renderDaftarKr(k){
 function krBukaStop(k,i){
   const kr=KRX[k].arr[i]; if(!kr) return;
   const nowYm=getNowYm();
-  let def=currentMonth; if(def<'2026-07'||def>nowYm) def=nowYm;
+  const awalK=awalBulanLoc(k==='sg'); let def=currentMonth; if(def<awalK||def>nowYm) def=nowYm;
   moCtx={type:'kr-stop',k,i};
   document.getElementById('mo-title').textContent='Berhenti Bekerja — '+kr.nama;
   document.getElementById('mo-body').innerHTML=`
     <div class="fg2"><label>Bulan terakhir kerja</label>
-      <select class="fi2" id="kr-keluar">${buildMonthOptsAbsen(def)}</select></div>
+      <select class="fi2" id="kr-keluar">${buildMonthOptsAbsen(def,awalK)}</select></div>
     <div style="font-size:11px;color:var(--tl);margin-top:2px;line-height:1.5">${kr.nama} tetap tampil di Absen, Lembur, dan Gaji sampai bulan ini. Mulai bulan berikutnya namanya tidak muncul lagi. Semua data lama tetap tersimpan.</div>`;
   showMO();
 }
@@ -971,9 +971,10 @@ function krInfoNaik(kr){
 }
 
 // Daftar <option> bulan dari Juli 2026 s/d maxYm
-function krOptBulan(def, maxYm, extra){
+function krOptBulan(def, maxYm, extra, awalYm){
+  awalYm = awalYm || awalBulanLoc(CURRENT_LOC===4);
   let o=(extra||[]).map(e=>`<option value="${e.v}"${e.v===def?' selected':''}>${e.t}</option>`).join('');
-  let y=2026, m=7;
+  let y=parseInt(awalYm.slice(0,4)), m=parseInt(awalYm.slice(5,7));
   for(;;){
     const v=y+'-'+String(m).padStart(2,'0');
     if(v>maxYm) break;
@@ -990,6 +991,8 @@ function krBukaForm(k, mode, i){
   if(mode==='edit' && !kr) return;
   moCtx={type:'kr-form', k, mode, i};
   const now=krBulanSekarang();
+  const awalK=awalBulanLoc(k==='sg');
+  const krOptBulanK=(d,mx,ex)=>krOptBulan(d,mx,ex,awalK);
   const hint = t=>`<div style="font-size:11px;color:var(--tl);margin:-4px 0 10px;line-height:1.5">${t}</div>`;
   let body='';
   if(mode==='add'){
@@ -997,18 +1000,18 @@ function krBukaForm(k, mode, i){
     body=`<div class="fg2"><label>Nama</label><input class="fi2" type="text" id="kr-nm" placeholder="Nama lengkap"></div>
       <div class="fg2"><label>Gaji Harian (Rp)</label><input class="fi2" type="number" id="kr-gj" placeholder="80000"></div>
       <div class="fg2"><label>Tipe Gaji</label><select class="fi2" id="kr-tp"><option value="mingguan">Mingguan</option><option value="bulanan">Bulanan</option></select></div>
-      <div class="fg2"><label>Mulai kerja bulan</label><select class="fi2" id="kr-mulai">${krOptBulan(now, now)}</select></div>
+      <div class="fg2"><label>Mulai kerja bulan</label><select class="fi2" id="kr-mulai">${krOptBulanK(now, now)}</select></div>
       ${hint('Nama ini hanya muncul mulai bulan tersebut. Bulan-bulan sebelumnya tidak ikut. Jika masuk di pertengahan bulan, pilih bulan berjalan.')}`;
   } else {
     document.getElementById('mo-title').textContent='Edit — '+kr.nama;
     const rw=krTeksRiwayat(kr);
     body=`<div class="fg2"><label>Gaji Harian (Rp)</label><input class="fi2" type="number" id="kr-gj" value="${krGaji(kr,now)}"></div>
-      <div class="fg2"><label>Gaji baru berlaku mulai bulan</label><select class="fi2" id="kr-berlaku">${krOptBulan(now, krBulanDepan(), [{v:'0000-00',t:'Semua bulan (koreksi salah input)'}])}</select></div>
+      <div class="fg2"><label>Gaji baru berlaku mulai bulan</label><select class="fi2" id="kr-berlaku">${krOptBulanK(now, krBulanDepan(), [{v:'0000-00',t:'Semua bulan (koreksi salah input)'}])}</select></div>
       ${hint('Hanya dipakai jika gaji diubah. Bulan-bulan sebelumnya tetap memakai gaji lama (terkunci).'+(rw?'<br><b>Riwayat gaji:</b> '+rw:''))}
       <div class="fg2"><label>Tipe Gaji</label><select class="fi2" id="kr-tp">
         <option value="mingguan" ${kr.tipe==='mingguan'?'selected':''}>Mingguan (Sabtu–Jumat)</option>
         <option value="bulanan" ${kr.tipe==='bulanan'?'selected':''}>Bulanan</option></select></div>
-      <div class="fg2"><label>Mulai kerja bulan</label><select class="fi2" id="kr-mulai">${krOptBulan(kr.mulai||'', now, [{v:'',t:'Sejak awal (semua bulan)'}])}</select></div>`;
+      <div class="fg2"><label>Mulai kerja bulan</label><select class="fi2" id="kr-mulai">${krOptBulanK(kr.mulai||'', now, [{v:'',t:'Sejak awal (semua bulan)'}])}</select></div>`;
   }
   document.getElementById('mo-body').innerHTML=body;
   showMO();
@@ -1830,16 +1833,24 @@ function renderAbsensi() {
 // Menampilkan hanya bulan sebelumnya + bulan berjalan. Bulan depan otomatis muncul
 // begitu tanggal sistem sudah memasuki bulan tersebut.
 function getNowYm(){const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;}
-function clampToAbsenMonth(){const nowYm=getNowYm();if(currentMonth>nowYm)currentMonth=nowYm;}
-function buildMonthOptsAbsen(cur) {
+// Bulan paling awal yang boleh dipilih: Sawah Gondang mulai April 2026, lokasi lain mulai Juli 2026
+function awalBulanLoc(isSG){ return isSG ? '2026-04' : '2026-07'; }
+function clampToAbsenMonth(){
+  const nowYm=getNowYm();
+  if(currentMonth>nowYm)currentMonth=nowYm;
+  const awal=awalBulanLoc(CURRENT_LOC===4);
+  if(awal<=nowYm && currentMonth<awal)currentMonth=awal;
+}
+function buildMonthOptsAbsen(cur, awalYm) {
+  awalYm = awalYm || awalBulanLoc(CURRENT_LOC===4);
   const lbls = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
   const now=new Date();
   const nowYm=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   let opts='';
   for(let y=2026;y<=2027;y++){
     for(let mo=1;mo<=12;mo++){
-      if(y===2026 && mo<7) continue; // mulai Juli 2026
       const val=`${y}-${String(mo).padStart(2,'0')}`;
+      if(val<awalYm) continue; // Sawah Gondang: mulai April 2026, lainnya: Juli 2026
       if(val>nowYm) continue; // sembunyikan bulan yang belum tiba
       opts+=`<option value="${val}"${val===cur?' selected':''}>${lbls[mo-1]} ${y}</option>`;
     }
@@ -2046,24 +2057,30 @@ function getBulanJawaSekarang() {
 let rekapJawaTahun=0,rekapJawaBulan=0;
 function initRekapJawa(){const j=getBulanJawaSekarang();rekapJawaTahun=j.tahunAJ;rekapJawaBulan=j.bulanIdx;}
 
+// Dropdown Rekap Jawa: label "NamaBulanJawa TahunMasehi", urut naik.
+// Utama: mulai Besar 2026 (Besar 1959 AJ, 17 Mei 2026). Sawah Gondang: mulai bulan Jawa yang memuat 1 April 2026.
+function buildJawaOpts(tahunAJ,bulanIdx,isSG){
+  const jsNow=getBulanJawaSekarang();
+  const st = isSG ? gregorianKeJawa(2026,4,1) : {tahunAJ:1959,bulanIdx:11};
+  let optsHtml='';
+  for(let tAJ=st.tahunAJ; tAJ<=jsNow.tahunAJ+1; tAJ++){
+    for(let b=(tAJ===st.tahunAJ?st.bulanIdx:0); b<12; b++){
+      const sel=(tAJ===tahunAJ&&b===bulanIdx)?'selected':'';
+      const gOpt=jawaKeGregorian(tAJ,b,1);
+      optsHtml+=`<option value="${tAJ}_${b}" ${sel}>${JAWA_BULAN[b]} ${gOpt.year}</option>`;
+    }
+  }
+  return optsHtml;
+}
+
 function renderRekap(){
   if(!rekapJawaTahun) initRekapJawa();
   const tahunAJ=rekapJawaTahun, bulanIdx=rekapJawaBulan;
   const namaBulan=JAWA_BULAN[bulanIdx];
   const hariList=getDaysBulanJawa(tahunAJ,bulanIdx);
 
-  // Dropdown: ±1 tahun Jawa dari sekarang
-  const jsNow=getBulanJawaSekarang();
-  let optsHtml='';
-  for(let dy=-1;dy<=1;dy++){
-    const tAJ=jsNow.tahunAJ+dy; if(tAJ<EPOCH_TAHUN_AJ) continue;
-    for(let b=0;b<12;b++){
-      const sel=(tAJ===tahunAJ&&b===bulanIdx)?'selected':'';
-      // Konversi tahunAJ ke tahun Masehi: ambil tahun Masehi dari 1 tgl bulan tsb
-      const gOpt=jawaKeGregorian(tAJ,b,1);
-      optsHtml+=`<option value="${tAJ}_${b}" ${sel}>${JAWA_BULAN[b]} ${gOpt.year}</option>`;
-    }
-  }
+  // Dropdown: urut dari bulan Jawa paling awal (label = tahun Masehi)
+  const optsHtml=buildJawaOpts(tahunAJ,bulanIdx,false);
 
   // Periode Masehi
   const mulai=hariList[0].masehi, akhir=hariList[hariList.length-1].masehi;
@@ -2477,18 +2494,8 @@ function renderRekapSG(){
   const namaBulan=JAWA_BULAN[bulanIdx];
   const hariList=getDaysBulanJawa(tahunAJ,bulanIdx);
 
-  // Dropdown: ±1 tahun Jawa dari sekarang
-  const jsNow=getBulanJawaSekarang();
-  let optsHtml='';
-  for(let dy=-1;dy<=1;dy++){
-    const tAJ=jsNow.tahunAJ+dy; if(tAJ<EPOCH_TAHUN_AJ) continue;
-    for(let b=0;b<12;b++){
-      const sel=(tAJ===tahunAJ&&b===bulanIdx)?'selected':'';
-      // Konversi tahunAJ ke tahun Masehi: ambil tahun Masehi dari 1 tgl bulan tsb
-      const gOpt=jawaKeGregorian(tAJ,b,1);
-      optsHtml+=`<option value="${tAJ}_${b}" ${sel}>${JAWA_BULAN[b]} ${gOpt.year}</option>`;
-    }
-  }
+  // Dropdown: urut dari bulan Jawa paling awal (label = tahun Masehi)
+  const optsHtml=buildJawaOpts(tahunAJ,bulanIdx,true);
 
   // Periode Masehi
   const mulai=hariList[0].masehi, akhir=hariList[hariList.length-1].masehi;
@@ -2705,13 +2712,19 @@ function renderPanen(t){
     </div>
   </div>
   <div class="tbl-wrap tbl-scroll-y"><table><thead class="thead-sticky"><tr><th class="td-sticky">Tgl</th>${bunga.map(b=>`<th>${b.split(' ')[0]}</th>`).join('')}<th>Total</th><th>Rusak</th></tr></thead><tbody>`;
-  days.forEach(({d,day})=>{
-    const we=day===0||day===6;let tot=0;
+  let wB=bunga.map(()=>0),wTot=0,wRk=0,wStart=0;
+  days.forEach(({d,day},di)=>{
+    const we=day===0||day===6;let tot=0;if(!wStart)wStart=d;
     const hasDat=bunga.some((_,bi)=>panenData[t][`P-${currentMonth}-${t}-${d}-${bi}`])||panenData[t][`P-${currentMonth}-${t}-${d}-rusak`];
     html+=`<tr style="cursor:pointer" onclick="openPanenMO(${t},${d})"><td class="td-sticky" style="${we?'background:#fdf8f5;':''}font-weight:600;white-space:nowrap">${d} <span style="font-size:9px;color:var(--tl);font-weight:500">${dayN[day]}</span></td>`;
-    bunga.forEach((_,bi)=>{const v=parseInt(panenData[t][`P-${currentMonth}-${t}-${d}-${bi}`]||0);tot+=v;html+=`<td style="${v?'color:var(--or)':''}">${v||''}</td>`;});
+    bunga.forEach((_,bi)=>{const v=parseInt(panenData[t][`P-${currentMonth}-${t}-${d}-${bi}`]||0);tot+=v;wB[bi]+=v;html+=`<td style="${v?'color:var(--or)':''}">${v||''}</td>`;});
     const rk=parseInt(panenData[t][`P-${currentMonth}-${t}-${d}-rusak`]||0);
     html+=`<td style="font-weight:700;color:var(--or)">${tot||''}</td><td style="${rk?'color:#c0392b':''}">${rk||''}</td></tr>`;
+    wTot+=tot;wRk+=rk;
+    if(day===0||di===days.length-1){ // habis Minggu (atau akhir bulan) → baris Jumlah
+      html+=`<tr style="background:var(--orp)"><td class="td-sticky" style="background:var(--orp);font-weight:700;white-space:nowrap">Jumlah <span style="font-size:9px;color:var(--tl);font-weight:500">${wStart===d?d:wStart+'–'+d}</span></td>${wB.map(v=>`<td style="font-weight:700;color:var(--or)">${v||''}</td>`).join('')}<td style="font-weight:700;color:var(--or)">${wTot||''}</td><td style="font-weight:700;color:#c0392b">${wRk||''}</td></tr>`;
+      wB=bunga.map(()=>0);wTot=0;wRk=0;wStart=0;
+    }
   });
   html+=`</tbody></table></div>`;document.getElementById('MC').innerHTML=html;
   mcScrollSet(_sl);
@@ -2809,18 +2822,28 @@ function renderPanenRekap(){
       </tr></thead>
       <tbody>`;
   let grandTot=0;const grandB=bunga.map(()=>0);
-  days.forEach(({d,day})=>{
+  let wB=bunga.map(()=>0),wTot=0,wR=[0,0,0],wStart=0;
+  days.forEach(({d,day},di)=>{
     const we=day===0||day===6;
+    if(!wStart)wStart=d;
     const bTot=bunga.map((_,bi)=>[1,2,3].reduce((s,t)=>s+parseInt(panenData[t]&&panenData[t][`P-${currentMonth}-${t}-${d}-${bi}`]||0),0));
     const rowTot=bTot.reduce((a,b)=>a+b,0);
-    bTot.forEach((v,i)=>grandB[i]+=v);grandTot+=rowTot;
+    bTot.forEach((v,i)=>{grandB[i]+=v;wB[i]+=v;});grandTot+=rowTot;wTot+=rowTot;
     const rusakT=[1,2,3].map(t=>parseInt(panenData[t]&&panenData[t][`P-${currentMonth}-${t}-${d}-rusak`]||0));
-    if(!rowTot&&!rusakT.some(r=>r))return;
-    html+=`<tr><td class="td-sticky" style="${we?'background:#fdf8f5;':''}font-weight:600;white-space:nowrap">${d} <span style="font-size:9px;color:var(--tl);font-weight:500">${dayN[day]}</span></td>`;
-    bTot.forEach(v=>html+=`<td style="${v?'color:var(--or)':''}">${v||''}</td>`);
-    html+=`<td style="font-weight:700;color:var(--or)">${rowTot||''}</td>`;
-    rusakT.forEach(r=>html+=`<td style="${r?'color:#c0392b':''}">${r||''}</td>`);
-    html+=`</tr>`;
+    rusakT.forEach((r,i)=>wR[i]+=r);
+    if(rowTot||rusakT.some(r=>r)){
+      html+=`<tr><td class="td-sticky" style="${we?'background:#fdf8f5;':''}font-weight:600;white-space:nowrap">${d} <span style="font-size:9px;color:var(--tl);font-weight:500">${dayN[day]}</span></td>`;
+      bTot.forEach(v=>html+=`<td style="${v?'color:var(--or)':''}">${v||''}</td>`);
+      html+=`<td style="font-weight:700;color:var(--or)">${rowTot||''}</td>`;
+      rusakT.forEach(r=>html+=`<td style="${r?'color:#c0392b':''}">${r||''}</td>`);
+      html+=`</tr>`;
+    }
+    if(day===0||di===days.length-1){ // habis Minggu (atau akhir bulan) → baris Jumlah
+      if(wTot||wR.some(r=>r)){
+        html+=`<tr style="background:var(--orp)"><td class="td-sticky" style="background:var(--orp);font-weight:700;white-space:nowrap">Jumlah <span style="font-size:9px;color:var(--tl);font-weight:500">${wStart===d?d:wStart+'–'+d}</span></td>${wB.map(v=>`<td style="font-weight:700;color:var(--or)">${v||''}</td>`).join('')}<td style="font-weight:700;color:var(--or)">${wTot||''}</td>${wR.map(r=>`<td style="font-weight:700;color:#c0392b">${r||''}</td>`).join('')}</tr>`;
+      }
+      wB=bunga.map(()=>0);wTot=0;wR=[0,0,0];wStart=0;
+    }
   });
   html+=`<tr style="background:var(--orp)"><td class="td-sticky" style="font-weight:700;background:var(--orp)">Total</td>`;
   grandB.forEach(v=>html+=`<td style="font-weight:700;color:var(--or)">${v||''}</td>`);
@@ -4107,18 +4130,32 @@ function printPanen() {
 
   let grandTot=0;const grandB=bunga.map(()=>0);
   let rekapB='';
-  days.forEach(({d,day})=>{
+  let wB=bunga.map(()=>0),wTot=0,wR=[0,0,0],wStart=0;
+  days.forEach(({d,day},di)=>{
+    if(!wStart)wStart=d;
     const bTot=bunga.map((_,bi)=>[1,2,3].reduce((s,t)=>s+parseInt(panenData[t]&&panenData[t][`P-${currentMonth}-${t}-${d}-${bi}`]||0),0));
     const rowTot=bTot.reduce((a,b)=>a+b,0);
-    bTot.forEach((v,i)=>grandB[i]+=v); grandTot+=rowTot;
+    bTot.forEach((v,i)=>{grandB[i]+=v;wB[i]+=v;}); grandTot+=rowTot; wTot+=rowTot;
     const rusakT=[1,2,3].map(t=>parseInt(panenData[t]&&panenData[t][`P-${currentMonth}-${t}-${d}-rusak`]||0));
-    if(!rowTot&&!rusakT.some(r=>r))return;
+    rusakT.forEach((r,i)=>wR[i]+=r);
     const dayStr=['Min','Sen','Sel','Rab','Kam','Jum','Sab'][day];
-    rekapB+=`<tr><td>${d} ${dayStr}</td>
-      ${bTot.map(v=>`<td class="c" style="${v?'color:#C2500A;font-weight:700':''}">${v||''}</td>`).join('')}
-      <td class="c" style="font-weight:700;color:#C2500A">${rowTot||''}</td>
-      ${rusakT.map(r=>`<td class="c" style="${r?'color:#c0392b':''}">${r||''}</td>`).join('')}
-    </tr>`;
+    if(rowTot||rusakT.some(r=>r)){
+      rekapB+=`<tr><td>${d} ${dayStr}</td>
+        ${bTot.map(v=>`<td class="c" style="${v?'color:#C2500A;font-weight:700':''}">${v||''}</td>`).join('')}
+        <td class="c" style="font-weight:700;color:#C2500A">${rowTot||''}</td>
+        ${rusakT.map(r=>`<td class="c" style="${r?'color:#c0392b':''}">${r||''}</td>`).join('')}
+      </tr>`;
+    }
+    if(day===0||di===days.length-1){ // habis Minggu (atau akhir bulan) → baris Jumlah
+      if(wTot||wR.some(r=>r)){
+        rekapB+=`<tr style="background:#FFF3EB;font-weight:700"><td>Jumlah ${wStart===d?d:wStart+'–'+d}</td>
+          ${wB.map(v=>`<td class="c">${v||''}</td>`).join('')}
+          <td class="c">${wTot||''}</td>
+          ${wR.map(r=>`<td class="c" style="color:#c0392b">${r||''}</td>`).join('')}
+        </tr>`;
+      }
+      wB=bunga.map(()=>0);wTot=0;wR=[0,0,0];wStart=0;
+    }
   });
   rekapB+=`<tr class="total"><td>TOTAL</td>
     ${grandB.map(v=>`<td class="c">${v||''}</td>`).join('')}
@@ -4130,17 +4167,30 @@ function printPanen() {
   [1,2,3].forEach(t=>{
     let tH=`<tr><th class="l">Tanggal</th>${bunga.map(b=>`<th>${b.split(' ')[0]}</th>`).join('')}<th>Total</th><th>Rusak</th></tr>`;
     let tB=''; let tot=0;
-    days.forEach(({d,day})=>{
+    let wB=bunga.map(()=>0),wT=0,wRk=0,wStart=0;
+    days.forEach(({d,day},di)=>{
+      if(!wStart)wStart=d;
       const bV=bunga.map((_,bi)=>parseInt(panenData[t]&&panenData[t][`P-${currentMonth}-${t}-${d}-${bi}`]||0));
       const rowT=bV.reduce((a,b)=>a+b,0);
       const rk=parseInt(panenData[t]&&panenData[t][`P-${currentMonth}-${t}-${d}-rusak`]||0);
-      if(!rowT&&!rk)return;
-      tot+=rowT;
-      const dayStr=['Min','Sen','Sel','Rab','Kam','Jum','Sab'][day];
-      tB+=`<tr><td>${d} ${dayStr}</td>
-        ${bV.map(v=>`<td class="c" style="${v?'color:#C2500A':''}">${v||''}</td>`).join('')}
-        <td class="c" style="font-weight:700;color:#C2500A">${rowT||''}</td>
-        <td class="c" style="${rk?'color:#c0392b':''}">${rk||''}</td></tr>`;
+      bV.forEach((v,i)=>wB[i]+=v); wT+=rowT; wRk+=rk;
+      if(rowT||rk){
+        tot+=rowT;
+        const dayStr=['Min','Sen','Sel','Rab','Kam','Jum','Sab'][day];
+        tB+=`<tr><td>${d} ${dayStr}</td>
+          ${bV.map(v=>`<td class="c" style="${v?'color:#C2500A':''}">${v||''}</td>`).join('')}
+          <td class="c" style="font-weight:700;color:#C2500A">${rowT||''}</td>
+          <td class="c" style="${rk?'color:#c0392b':''}">${rk||''}</td></tr>`;
+      }
+      if(day===0||di===days.length-1){ // habis Minggu (atau akhir bulan) → baris Jumlah
+        if(wT||wRk){
+          tB+=`<tr style="background:#FFF3EB;font-weight:700"><td>Jumlah ${wStart===d?d:wStart+'–'+d}</td>
+            ${wB.map(v=>`<td class="c">${v||''}</td>`).join('')}
+            <td class="c">${wT||''}</td>
+            <td class="c" style="color:#c0392b">${wRk||''}</td></tr>`;
+        }
+        wB=bunga.map(()=>0);wT=0;wRk=0;wStart=0;
+      }
     });
     detailHtml+=`<div class="section"><h2 style="color:#15803D;margin-bottom:4px">📍 ${LOKNAMA[t]} — Total: ${tot} tangkai</h2>
       <table><thead>${tH}</thead><tbody>${tB||`<tr><td colspan="${bunga.length+3}" style="text-align:center;color:#999;padding:8px">Belum ada data</td></tr>`}</tbody></table>
