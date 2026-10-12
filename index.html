@@ -1179,6 +1179,7 @@ function applyNav(entry) {
   document.getElementById('btn-back').style.display = entry.showBack ? 'flex' : 'none';
   document.getElementById('tb-logo').style.display = entry.showBack ? 'none' : 'flex';
   CURRENT_LOC = null;
+  CURRENT_AKK = false;
   entry.renderFn();
   applyReadOnlyGuard();
 }
@@ -1240,6 +1241,7 @@ const roleName = {
 // ── PERMISSION SYSTEM (role-based access) ────────────────────
 // Lokasi: 1=Kalibanger, 2=Tegalroto, 3=Ngadikerso, 4=Sawah Gondang
 const ROLE_LOC = { petugas_kalibanger:1, petugas_tegalroto:2, petugas_ngadikerso:3, petugas_sawahgondang:4 };
+let CURRENT_AKK = false; // true di halaman Absen/Lembur/Kas Sawah Gondang → admin & bendahara boleh edit
 let CURRENT_LOC = null; // lokasi konteks halaman yang sedang aktif (diset oleh render fn lokasi), direset applyNav()
 
 function myLoc(){ return CU ? (ROLE_LOC[CU.role]||0) : 0; }
@@ -1268,11 +1270,20 @@ function canSeeLokasiMenus(){
 // Bisa kelola Jenis Bunga (master data)?
 function canManageJenisBunga(){ return CU && CU.role==='admin'; }
 
+// Menu Gaji & Rekap Jawa disembunyikan untuk Bendahara
+function canSeeGajiRekap(){ return !!CU && CU.role!=='bendahara'; }
+// Bisa edit di halaman yang sedang aktif? (lokasi biasa ATAU Absen/Lembur/Kas Sawah Gondang untuk admin & bendahara)
+function canEditHalamanIni(){
+  if(CURRENT_LOC==null) return true;
+  if(canEditLoc(CURRENT_LOC)) return true;
+  return CURRENT_AKK && canAccessAbsenKasPenjualan();
+}
+
 // Kunci semua tombol simpan/edit/hapus & input di area konten (#MC) saat CURRENT_LOC read-only
 function applyReadOnlyGuard(){
   const mc = document.getElementById('MC');
   if(!mc) return;
-  if(CURRENT_LOC==null || canEditLoc(CURRENT_LOC)) return;
+  if(canEditHalamanIni()) return;
   mc.querySelectorAll('.btn-save,.bsm,input,select,textarea').forEach(el=>{
     el.disabled = true;
     el.style.opacity = '0.45';
@@ -1546,6 +1557,7 @@ function renderAbsenMenu() {
         <div class="mc-icon-wrap" style="background:#fefce8"><i class="ti ti-clock-plus" style="font-size:22px;color:#b8820f" aria-hidden="true"></i></div>
         <div class="mc-label">Lembur</div><div class="mc-sub">Jam tambahan</div>
       </div>
+      ${canSeeGajiRekap()?`
       <div class="menu-card green" onclick="pushNav({title:'Rekap',sub:'Bonus & lembur',renderFn:renderRekap,showBack:true})">
         <div class="mc-icon-wrap" style="background:#edf7f1"><i class="ti ti-report" style="font-size:22px;color:#1a6b3c" aria-hidden="true"></i></div>
         <div class="mc-label">Rekap</div><div class="mc-sub">Absen kalender Jawa</div>
@@ -1554,6 +1566,11 @@ function renderAbsenMenu() {
         <div class="mc-icon-wrap" style="background:#eff6ff"><i class="ti ti-cash" style="font-size:22px;color:#1D4ED8" aria-hidden="true"></i></div>
         <div class="mc-label">Gaji</div><div class="mc-sub">Per minggu</div>
       </div>
+      <div class="menu-card gold" onclick="pushNav({title:'Slip Gaji',sub:'Cetak per bulan',renderFn:()=>renderSlipGaji('kebun'),showBack:true})" style="grid-column:1/-1">
+        <div class="mc-icon-wrap" style="background:#fefce8"><i class="ti ti-file-invoice" style="font-size:22px;color:#b8820f" aria-hidden="true"></i></div>
+        <div class="mc-label">Slip Gaji</div><div class="mc-sub">Print semua / satuan · A4 isi 3 slip</div>
+      </div>
+      `:''}
       <div class="menu-card purple" onclick="pushNav({title:'Data Karyawan',sub:'Kelola karyawan',renderFn:renderKaryawan,showBack:true})" style="grid-column:1/-1">
         <div class="mc-icon-wrap" style="background:#f5f3ff"><i class="ti ti-users" style="font-size:22px;color:#7C3AED" aria-hidden="true"></i></div>
         <div class="mc-label">Data Karyawan</div><div class="mc-sub">Tambah, edit & berhenti kerja</div>
@@ -1792,6 +1809,7 @@ function renderAbsensi() {
     <div class="leg-item"><div class="leg-dot" style="background:#edf7f1;color:#15803D">S</div>Sakit</div>
     <div class="leg-item"><div class="leg-dot" style="background:#fdf2f1;color:#c0392b">A</div>Tanpa Ket</div>
     <div class="leg-item"><div class="leg-dot" style="background:#f5f3ff;color:#9333EA">B</div>Diliburkan</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#fff;color:#1a0e05;box-shadow:inset 0 -3px 0 0 #eab308">7</div>Kurang 8 jam</div>
   </div>
   <div style="display:flex;gap:6px;margin-bottom:10px">
     <button class="btn-save" style="flex:1;padding:9px 14px;font-size:13px;border:none;cursor:pointer" onclick="openAbsenBatch()"><i class="ti ti-plus" aria-hidden="true"></i> Input Cepat</button>
@@ -1847,7 +1865,7 @@ function buildMonthOptsAbsen(cur, awalYm) {
   const now=new Date();
   const nowYm=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   let opts='';
-  for(let y=2026;y<=2027;y++){
+  for(let y=2026;y<=now.getFullYear();y++){
     for(let mo=1;mo<=12;mo++){
       const val=`${y}-${String(mo).padStart(2,'0')}`;
       if(val<awalYm) continue; // Sawah Gondang: mulai April 2026, lainnya: Juli 2026
@@ -2074,6 +2092,7 @@ function buildJawaOpts(tahunAJ,bulanIdx,isSG){
 }
 
 function renderRekap(){
+  if(!canSeeGajiRekap()){ toast('⛔ Tidak punya akses'); goBack(); return; }
   if(!rekapJawaTahun) initRekapJawa();
   const tahunAJ=rekapJawaTahun, bulanIdx=rekapJawaBulan;
   const namaBulan=JAWA_BULAN[bulanIdx];
@@ -2184,6 +2203,7 @@ function printRekapJawa(){
 
 // ── GAJI ──────────────────────────────────────────────────
 function renderGaji(){
+  if(!canSeeGajiRekap()){ toast('⛔ Tidak punya akses'); goBack(); return; }
   clampToAbsenMonth();
   const days=getDays(currentMonth);const wks=getWeeks(days);const[y,m]=currentMonth.split('-').map(Number);
   // month selector prepend
@@ -2276,6 +2296,144 @@ function openLemburRateEdit(){
   showMO();
 }
 
+// ── SLIP GAJI (1 lembar A4 = 3 slip) ─────────────────────
+// Angka diambil dengan rumus yang sama persis dengan menu Gaji (pokok = jam/8 × gaji harian, lembur = menit × tarif/60).
+const SLIP_CFG = {
+  kebun:{ label:'Kebun',         arr:()=>karyawan,   absen:()=>absenData,   lembur:()=>lemburData,   rate:ym=>rateLembur(ym) },
+  sg:   { label:'Sawah Gondang', arr:()=>karyawanSG, absen:()=>absenDataSG, lembur:()=>lemburDataSG, rate:ym=>rateLemburSG(ym) }
+};
+const slipEsc = x=>String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function slipHitung(k, ym){
+  const C=SLIP_CFG[k];
+  const wks=getWeeks(getDays(ym));
+  const ab=C.absen(), lm=C.lembur(), rate=C.rate(ym);
+  return C.arr().filter(kr=>krAktif(kr,ym)).map(kr=>{
+    let totM=0,totL=0,totP=0,totLR=0,hadir=0,I=0,S=0,A=0,B=0;
+    const weeks=wks.map(wk=>{
+      let tM=0,tL=0;
+      wk.forEach(d=>{
+        const v=(ab[`${ym}-${kr.id}-${d}`]||'').toUpperCase();
+        if(v){
+          if(absenColors[v]){ if(v==='I')I++; else if(v==='S')S++; else if(v==='A')A++; else if(v==='B')B++; }
+          else { const mn=parseTime(v); tM+=mn; if(mn>0)hadir++; }
+        }
+        tL+=parseInt(lm[`L-${ym}-${kr.id}-${d}`]||0);
+      });
+      const gP=Math.round(krGaji(kr,ym)*(tM/480));
+      const gL=Math.round(tL*(rate/60));
+      totM+=tM; totL+=tL; totP+=gP; totLR+=gL;
+      return {wk,tM,tL,gP,gL};
+    });
+    return {kr,weeks,totM,totL,totP,totLR,total:totP+totLR,hadir,I,S,A,B,harian:krGaji(kr,ym),rate};
+  });
+}
+
+function slipHTML(d,k,ym){
+  const [y,m]=ym.split('-').map(Number);
+  const rows=d.weeks.map((w,i)=>`<tr>
+      <td>Minggu ${i+1} <span class="g">(${w.wk[0]}–${w.wk[w.wk.length-1]})</span></td>
+      <td class="c">${fmtMins(w.tM)}</td><td class="r">${w.gP?fmtRp(w.gP):'-'}</td>
+      <td class="c">${fmtMins(w.tL)}</td><td class="r">${w.gL?fmtRp(w.gL):'-'}</td>
+      <td class="r b">${fmtRp(w.gP+w.gL)}</td></tr>`).join('');
+  const now=new Date(), tgl=`${now.getDate()}/${now.getMonth()+1}/${now.getFullYear()}`;
+  return `<div class="slip">
+    <div class="hd">
+      <div><div class="br">🌸 Wawan Bunga</div><div class="sb">SLIP GAJI KARYAWAN — ${SLIP_CFG[k].label.toUpperCase()}</div></div>
+      <div class="hr">Periode: <b>${monthN[m]} ${y}</b><br>Dicetak: ${tgl}</div>
+    </div>
+    <div class="id">
+      <div><span>Nama</span><b>${slipEsc(d.kr.nama)}</b></div>
+      <div><span>Status</span><b>${d.kr.tipe==='bulanan'?'Bulanan':'Mingguan (Sabtu–Jumat)'}</b></div>
+      <div><span>Gaji harian</span><b>${fmtRp(d.harian)}</b></div>
+      <div><span>Tarif lembur</span><b>${fmtRp(d.rate)}/jam</b></div>
+    </div>
+    <table>
+      <thead><tr><th class="l">Minggu</th><th>Jam Kerja</th><th>Gaji Pokok</th><th>Lembur</th><th>Upah Lembur</th><th>Jumlah</th></tr></thead>
+      <tbody>${rows}
+        <tr class="tt"><td>TOTAL</td><td class="c">${fmtMins(d.totM)}</td><td class="r">${fmtRp(d.totP)}</td><td class="c">${fmtMins(d.totL)}</td><td class="r">${fmtRp(d.totLR)}</td><td class="r">${fmtRp(d.total)}</td></tr>
+      </tbody>
+    </table>
+    <div class="kh">Hadir <b>${d.hadir}</b> hari · Ijin ${d.I} · Sakit ${d.S} · Tanpa keterangan ${d.A} · Diliburkan ${d.B}</div>
+    <div class="ft">
+      <div class="sg"><div>Penerima,<div class="ln"></div></div><div>Pemberi,<div class="ln"></div></div></div>
+      <div class="bx">
+        <div><span>Gaji pokok</span><b>${fmtRp(d.totP)}</b></div>
+        <div><span>Upah lembur</span><b>${fmtRp(d.totLR)}</b></div>
+        <div class="gt"><span>TOTAL DITERIMA</span><b>${fmtRp(d.total)}</b></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+const SLIP_CSS=`<style>
+  @page{size:A4 portrait;margin:0}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Plus Jakarta Sans',Arial,sans-serif;color:#1a0e05;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .page{width:210mm;height:296mm;page-break-after:always;overflow:hidden}
+  .page:last-child{page-break-after:auto}
+  .slip{height:98.6mm;padding:6mm 12mm 4mm;border-bottom:1px dashed #b9a590;overflow:hidden}
+  .page .slip:last-child{border-bottom:none}
+  .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #C2500A;padding-bottom:4px;margin-bottom:5px}
+  .br{font-size:15px;font-weight:700;color:#C2500A}.sb{font-size:9px;font-weight:700;color:#7a4020;letter-spacing:.4px;margin-top:1px}
+  .hr{text-align:right;font-size:9px;color:#7a4020;line-height:1.5}
+  .id{display:grid;grid-template-columns:1.4fr 1.4fr 1fr 1fr;gap:4px 10px;margin-bottom:5px;font-size:9.5px}
+  .id div{display:flex;flex-direction:column}.id span{font-size:8px;color:#7a4020}.id b{font-size:10.5px}
+  table{width:100%;border-collapse:collapse;margin-bottom:3px}
+  th{background:#C2500A;color:#fff;font-size:8.5px;padding:3px 4px;text-align:center}th.l{text-align:left}
+  td{font-size:9.5px;padding:2px 4px;border-bottom:1px solid #e8d5c0}
+  td.c{text-align:center}td.r{text-align:right}td.b{font-weight:700}.g{font-size:8px;color:#7a4020}
+  tr.tt td{background:#FFF3EB;font-weight:700;color:#C2500A;border-bottom:none}
+  .kh{font-size:8.5px;color:#7a4020;margin-bottom:5px}
+  .ft{display:flex;justify-content:space-between;align-items:flex-end;gap:14px}
+  .sg{display:flex;gap:26px;font-size:9px}.sg>div{width:36mm}.ln{border-bottom:1px solid #1a0e05;height:13mm}
+  .bx{min-width:62mm;font-size:9.5px}.bx div{display:flex;justify-content:space-between;padding:1px 0}
+  .bx .gt{background:#C2500A;color:#fff;padding:4px 7px;margin-top:2px;border-radius:4px;font-size:11px;font-weight:700}
+</style>`;
+
+function slipCetak(k, id){
+  if(!canSeeGajiRekap()){ toast('⛔ Tidak punya akses'); return; }
+  const ym=currentMonth;
+  let list=slipHitung(k,ym);
+  if(id) list=list.filter(d=>d.kr.id===id);
+  if(!list.length){ toast('❌ Tidak ada karyawan aktif bulan ini'); return; }
+  let pages='';
+  for(let i=0;i<list.length;i+=3){
+    pages+=`<div class="page">${list.slice(i,i+3).map(d=>slipHTML(d,k,ym)).join('')}</div>`;
+  }
+  const [y,m]=ym.split('-').map(Number);
+  PX.doOpen(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Slip Gaji ${SLIP_CFG[k].label} ${monthN[m]} ${y}</title>${SLIP_CSS}</head><body>${pages}</body></html>`);
+}
+
+function renderSlipGaji(k){
+  if(!canSeeGajiRekap()){ toast('⛔ Tidak punya akses'); goBack(); return; }
+  const awal=awalBulanLoc(k==='sg'), nowYm=getNowYm();
+  if(currentMonth>nowYm) currentMonth=nowYm;
+  if(awal<=nowYm && currentMonth<awal) currentMonth=awal;
+  const [y,m]=currentMonth.split('-').map(Number);
+  const list=slipHitung(k,currentMonth);
+  const grand=list.reduce((s,d)=>s+d.total,0);
+  let html=`<div style="display:flex;gap:6px;margin-bottom:10px">
+    <select onchange="currentMonth=this.value;renderSlipGaji('${k}')" class="sel-month" style="flex:1">${buildMonthOptsAbsen(currentMonth,awal)}</select>
+    <button class="btn-print" onclick="slipCetak('${k}')"><i class="ti ti-printer"></i> Print Semua</button>
+  </div>
+  <div class="cd">
+    <div class="ct"><i class="ti ti-file-invoice" aria-hidden="true"></i>Slip Gaji ${monthN[m]} ${y} — ${list.length} karyawan</div>`;
+  if(!list.length) html+=`<div style="padding:14px;font-size:12px;color:var(--tl);text-align:center">Belum ada karyawan aktif bulan ini</div>`;
+  list.forEach(d=>{
+    html+=`<div class="li">
+      <div class="av">${initials(d.kr.nama)}</div>
+      <div style="flex:1;min-width:0"><div class="wn">${slipEsc(d.kr.nama)}</div>
+        <div class="ws">${d.kr.tipe==='bulanan'?'Bulanan':'Mingguan'} · hadir ${d.hadir} hari · lembur ${fmtMins(d.totL)}</div></div>
+      <div style="text-align:right;margin-right:8px;font-weight:700;color:var(--or);font-size:12px;white-space:nowrap">${fmtRp(d.total)}</div>
+      <button class="bsm bsm-o" onclick="slipCetak('${k}','${d.kr.id}')" aria-label="Print slip"><i class="ti ti-printer" aria-hidden="true"></i></button>
+    </div>`;
+  });
+  html+=`</div>
+  <div style="padding:6px 4px;font-size:11px;color:var(--tl);line-height:1.6">Total semua slip: <b style="color:var(--or)">${fmtRp(grand)}</b><br>1 lembar A4 berisi 3 slip. Print satuan tercetak di bagian atas lembar, sisanya bisa dipakai lagi.</div>`;
+  document.getElementById('MC').innerHTML=html;
+}
+
 function renderKaryawan(){ renderDaftarKr('kebun'); }
 
 // ══════════════════════════════════════════════════════════
@@ -2293,6 +2451,7 @@ function renderAbsenMenuSG() {
         <div class="mc-icon-wrap" style="background:#fefce8"><i class="ti ti-clock-plus" style="font-size:22px;color:#b8820f" aria-hidden="true"></i></div>
         <div class="mc-label">Lembur</div><div class="mc-sub">Jam tambahan</div>
       </div>
+      ${canSeeGajiRekap()?`
       <div class="menu-card green" onclick="pushNav({title:'Rekap Sawah Gondang',sub:'Bonus & lembur',renderFn:renderRekapSG,showBack:true})">
         <div class="mc-icon-wrap" style="background:#edf7f1"><i class="ti ti-report" style="font-size:22px;color:#1a6b3c" aria-hidden="true"></i></div>
         <div class="mc-label">Rekap</div><div class="mc-sub">Absen kalender Jawa</div>
@@ -2301,6 +2460,11 @@ function renderAbsenMenuSG() {
         <div class="mc-icon-wrap" style="background:#eff6ff"><i class="ti ti-cash" style="font-size:22px;color:#1D4ED8" aria-hidden="true"></i></div>
         <div class="mc-label">Gaji</div><div class="mc-sub">Per minggu</div>
       </div>
+      <div class="menu-card gold" onclick="pushNav({title:'Slip Gaji Sawah Gondang',sub:'Cetak per bulan',renderFn:()=>renderSlipGaji('sg'),showBack:true})" style="grid-column:1/-1">
+        <div class="mc-icon-wrap" style="background:#fefce8"><i class="ti ti-file-invoice" style="font-size:22px;color:#b8820f" aria-hidden="true"></i></div>
+        <div class="mc-label">Slip Gaji</div><div class="mc-sub">Print semua / satuan · A4 isi 3 slip</div>
+      </div>
+      `:''}
       <div class="menu-card purple" onclick="pushNav({title:'Data Karyawan — Sawah Gondang',sub:'Kelola karyawan',renderFn:renderKaryawanSG,showBack:true})" style="grid-column:1/-1">
         <div class="mc-icon-wrap" style="background:#f5f3ff"><i class="ti ti-users" style="font-size:22px;color:#7C3AED" aria-hidden="true"></i></div>
         <div class="mc-label">Data Karyawan</div><div class="mc-sub">Tambah, edit & berhenti kerja</div>
@@ -2309,7 +2473,7 @@ function renderAbsenMenuSG() {
 }
 
 function renderAbsensiSG() {
-  CURRENT_LOC = 4;
+  CURRENT_LOC = 4; CURRENT_AKK = true;
   clampToAbsenMonth();
   const _sl=mcScrollGet();
   const days = getDays(currentMonth);
@@ -2319,6 +2483,7 @@ function renderAbsensiSG() {
     <div class="leg-item"><div class="leg-dot" style="background:#edf7f1;color:#15803D">S</div>Sakit</div>
     <div class="leg-item"><div class="leg-dot" style="background:#fdf2f1;color:#c0392b">A</div>Tanpa Ket</div>
     <div class="leg-item"><div class="leg-dot" style="background:#f5f3ff;color:#9333EA">B</div>Diliburkan</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#fff;color:#1a0e05;box-shadow:inset 0 -3px 0 0 #eab308">7</div>Kurang 8 jam</div>
   </div>
   <div style="display:flex;gap:6px;margin-bottom:10px">
     <button class="btn-save" style="flex:1;padding:9px 14px;font-size:13px;border:none;cursor:pointer" onclick="openAbsenBatchSG()"><i class="ti ti-plus" aria-hidden="true"></i> Input Cepat</button>
@@ -2328,7 +2493,10 @@ function renderAbsensiSG() {
     ${buildMonthOptsAbsen(currentMonth)}
   </select>
   <div class="tbl-wrap tbl-scroll-y"><table><thead class="thead-sticky"><tr><th class="td-sticky">Nama</th>`;
-  days.forEach(({d,day})=>{const we=day===0||day===6;html+=`<th style="${we?'background:#9c4507':''}">${d}<br>${dayN[day]}</th>`;});
+  days.forEach(({d,day})=>{
+    const whBg = day===0 ? 'background:#c0392b' : (day===6 ? 'background:#9c4507' : ''); // Minggu merah, Sabtu coklat (sama seperti Absen utama)
+    html+=`<th style="${whBg}">${d}<br>${dayN[day]}</th>`;
+  });
   html+=`<th>Jam</th></tr></thead><tbody>`;
   karyawanSG.forEach((kr,ki)=>{if(!krAktif(kr,currentMonth))return;
     let tot=0;
@@ -2336,10 +2504,13 @@ function renderAbsensiSG() {
     days.forEach(({d,day})=>{
       const k=`${currentMonth}-${karyawanSG[ki].id}-${d}`;
       const v=(absenDataSG[k]||'').toUpperCase();
-      const we=day===0||day===6;
-      let st=we?'background:#fdf8f5;':'';
+      let st = day===0 ? 'background:rgba(192,57,43,.6);' : (day===6 ? 'background:#fdf8f5;' : '');
       if(absenStyle[v])st+=absenStyle[v];
-      if(v&&!absenColors[v]){tot+=parseTime(v);if(!krParseJam(v))st+='outline:2px solid #c0392b;outline-offset:-2px;';}
+      if(v&&!absenColors[v]){
+        tot+=parseTime(v);
+        if(!krParseJam(v)) st+='outline:2px solid #c0392b;outline-offset:-2px;';
+        else if(parseTime(v)<480) st+='box-shadow:inset 0 -3px 0 0 #eab308;'; // di bawah 8 jam → garis kuning
+      }
       html+=`<td style="${st};cursor:pointer" onclick="openAbsenModalSG(${ki},${d},'${k}')">${v||''}</td>`;
     });
     html+=`<td style="font-weight:700;color:var(--or)">${fmtMins(tot)}</td></tr>`;
@@ -2417,7 +2588,7 @@ function openAbsenBatchSG(ki=-1){
 
 // ── LEMBUR ────────────────────────────────────────────────
 function renderLemburSG(){
-  CURRENT_LOC = 4;
+  CURRENT_LOC = 4; CURRENT_AKK = true;
   clampToAbsenMonth();
   const _sl=mcScrollGet();
   const days=getDays(currentMonth);const[y,m]=currentMonth.split('-').map(Number);
@@ -2488,6 +2659,7 @@ function openLemburBatchSG(ki=-1){
 
 // ── REKAP (Sawah Gondang) — pakai kalender Jawa & state global yang sama ──
 function renderRekapSG(){
+  if(!canSeeGajiRekap()){ toast('⛔ Tidak punya akses'); goBack(); return; }
   CURRENT_LOC = 4;
   if(!rekapJawaTahun) initRekapJawa();
   const tahunAJ=rekapJawaTahun, bulanIdx=rekapJawaBulan;
@@ -2599,6 +2771,7 @@ function printRekapJawaSG(){
 
 // ── GAJI ──────────────────────────────────────────────────
 function renderGajiSG(){
+  if(!canSeeGajiRekap()){ toast('⛔ Tidak punya akses'); goBack(); return; }
   CURRENT_LOC = 4;
   clampToAbsenMonth();
   const days=getDays(currentMonth);const wks=getWeeks(days);const[y,m]=currentMonth.split('-').map(Number);
@@ -2855,6 +3028,7 @@ function renderPanenRekap(){
 // ── KAS ───────────────────────────────────────────────────
 function renderKas(tp){
   CURRENT_LOC = (typeof tp==='string' && tp.includes('gondang')) ? 4 : null;
+  CURRENT_AKK = (CURRENT_LOC===4);
   clampToAbsenMonth();
   const[y,m]=currentMonth.split('-').map(Number);
   // filter transaksi bulan ini
@@ -3579,7 +3753,7 @@ function hideMO(){
 function closeMO(e){if(e.target===document.getElementById('MO'))hideMO();}
 
 function saveMO(){
-  if(CURRENT_LOC!=null && !canEditLoc(CURRENT_LOC)){ hideMO(); toast('🔒 Anda hanya punya akses lihat di sini'); return; }
+  if(!canEditHalamanIni()){ hideMO(); toast('🔒 Anda hanya punya akses lihat di sini'); return; }
   const mc=moCtx;
   if(mc.type==='kr-stop'){ krSimpanStop(); return; }
   if(mc.type==='kr-form'){ krSimpanForm(); return; }
